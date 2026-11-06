@@ -1,0 +1,156 @@
+import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { chromium } from 'playwright-core';
+import type { Browser } from 'playwright-core';
+
+const run = promisify(execFile);
+const root = join(import.meta.dir, '..');
+const bin = join(root, 'packages/tinyjs/bin/tinyjs.js');
+const marker = 'SERVER_ONLY_TEST_MARKER';
+let browser: Browser;
+let temporary: string;
+
+beforeAll(async () => {
+  temporary = await mkdtemp(join(root, '.tinyjs-test-'));
+  browser = await chromium.launch({ executablePath: process.env.TINYJS_CHROMIUM_PATH });
+}, 20_000);
+
+afterAll(async () => {
+  await browser?.close();
+  if (temporary) await rm(temporary, { recursive: true, force: true });
+});
+
+async function fixture(name: string) {
+  const cwd = join(temporary, name);
+  await cp(join(root, 'examples/basic/app'), join(cwd, 'app'), { recursive: true });
+  await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
+  await mkdir(join(cwd, 'app/api/echo'));
+  await writeFile(join(cwd, 'app/api/echo/route.ts'), `
+    import { createHash } from 'node:crypto';
+    export async function POST(request: Request) {
+      const text = await request.text();
+      const hash = createHash('sha256').update(text).digest('hex');
+      return Response.json({ hash, marker: '${marker}' }, {
+        status: 201,
+        headers: [['Set-Cookie', 'first=1'], ['Set-Cookie', 'second=2']],
+      });
+    }
+  `);
+  await mkdir(join(cwd, 'app/api/fail'));
+  await writeFile(join(cwd, 'app/api/fail/route.ts'), `export function GET() { throw new Error('${marker}'); }`);
+  await writeFile(join(cwd, 'app/theme.css'), 'main { padding-left: 13px; }');
+  const layout = join(cwd, 'app/layout.tsx');
+  await writeFile(layout, `import './theme.css';\n${await readFile(layout, 'utf8')}`);
+  return cwd;
+}
+
+async function withServer(runtime: string, command: 'dev' | 'start', cwd: string, check: (url: string) => Promise<void>) {
+  const child = spawn(runtime, [bin, command, '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  let logs = '';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const url = await new Promise<string>((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(`TinyJS ${command} timed out:\n${logs}`)), 15_000);
+      child.once('error', reject);
+      child.once('exit', (code) => reject(new Error(`TinyJS ${command} exited with ${code}:\n${logs}`)));
+      child.stderr.setEncoding('utf8').on('data', (chunk) => { logs += chunk; });
+      child.stdout.setEncoding('utf8').on('data', (chunk) => {
+        logs += chunk;
+        const address = /TinyJS listening on (http:\/\/127\.0\.0\.1:\d+)\r?\n/.exec(logs);
+        if (address) resolve(address[1]);
+      });
+    });
+    clearTimeout(timer);
+    await check(url);
+    expect(logs).not.toContain('Failed to run dependency scan');
+  } catch (error) {
+    throw new Error(`TinyJS ${command} checks failed:\n${logs}`, { cause: error });
+  } finally {
+    clearTimeout(timer);
+    if (child.pid && child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, 'close');
+      child.kill();
+      await closed;
+    }
+  }
+}
+
+async function checkApplication(url: string, command: 'dev' | 'start') {
+  const home = await fetch(url);
+  expect(home.status).toBe(200);
+  expect(await home.text()).toContain('<button type="button">Count: 0</button>');
+  const about = await fetch(`${url}/about/?from=home`);
+  expect(about.status).toBe(200);
+  expect(await about.text()).toContain('<main><section aria-label="About TinyJS"><h1>About TinyJS</h1></section></main>');
+  expect(await (await fetch(`${url}/api/hello`)).json()).toEqual({ message: 'Hello from TinyJS' });
+  const head = await fetch(`${url}/api/hello`, { method: 'HEAD' });
+  expect(head.status).toBe(200);
+  expect(await head.text()).toBe('');
+  const post = await fetch(`${url}/api/echo`, { method: 'POST', body: 'hello' });
+  expect(post.status).toBe(201);
+  expect(post.headers.getSetCookie()).toEqual(['first=1', 'second=2']);
+  expect(await post.json()).toEqual({ hash: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824', marker });
+  const notAllowed = await fetch(`${url}/about`, { method: 'POST' });
+  expect(notAllowed.status).toBe(405);
+  expect(notAllowed.headers.get('allow')).toBe('GET, HEAD');
+  expect((await fetch(`${url}/missing`)).status).toBe(404);
+  const failed = await fetch(`${url}/api/fail`);
+  expect(failed.status).toBe(500);
+  expect(await failed.text()).toBe('Internal Server Error');
+  for (const path of ['/app/api/echo/route.ts', '/.tinyjs/server/server.mjs']) {
+    const response = await fetch(url + path);
+    expect(response.ok).toBe(false);
+    expect(await response.text()).not.toContain(marker);
+  }
+
+  const page = await browser.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(url);
+    const source = await page.evaluate(async () => {
+      const entry = Array.from(document.scripts).find((script) => script.type === 'module' && !script.src.endsWith('/@vite/client'))!;
+      await import(entry.src);
+      return entry.src;
+    });
+    expect(source).toContain(command === 'dev' ? '/@tinyjs/client' : '/_tinyjs/assets/client-');
+    expect(await page.locator('main').evaluate((element) => getComputedStyle(element).paddingLeft)).toBe('13px');
+    await page.getByRole('button', { name: 'Count: 0' }).click();
+    await page.getByRole('button', { name: 'Count: 1' }).click();
+    await page.getByRole('button', { name: 'Count: 2' }).waitFor();
+    await page.getByRole('link', { name: 'About' }).click();
+    await page.getByRole('heading', { name: 'About TinyJS' }).waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}
+
+test.each([['Node', 'node'], ['Bun', process.execPath]])('%s serves dev and independent production bundles', async (name, runtime) => {
+  const cwd = await fixture(name);
+  const { stdout } = await run(runtime, [bin, 'build'], { cwd, timeout: 20_000 });
+  expect(stdout).toMatch(/Shared client JS: [1-9]\d* bytes gzip \(goal: 3000 bytes\)/);
+  const client = join(cwd, '.tinyjs/client/assets');
+  const scripts = (await readdir(client)).filter((file) => file.endsWith('.js'));
+  expect(scripts.length).toBeGreaterThan(1);
+  for (const file of scripts) {
+    expect(await readFile(join(client, file), 'utf8')).not.toMatch(/SERVER_ONLY_TEST_MARKER|node:crypto|\/@vite\/client/);
+  }
+  expect(await readFile(join(cwd, '.tinyjs/server/server.mjs'), 'utf8')).toContain(marker);
+  await withServer(runtime, 'dev', cwd, (url) => checkApplication(url, 'dev'));
+  const standalone = join(temporary, `${name}-production`);
+  await cp(join(cwd, '.tinyjs'), join(standalone, '.tinyjs'), { recursive: true });
+  await withServer(runtime, 'start', standalone, (url) => checkApplication(url, 'start'));
+}, 60_000);
+
+test('rejects API modules in the browser graph and leaves no runnable build', async () => {
+  const cwd = await fixture('invalid-client');
+  const home = join(cwd, 'app/page.tsx');
+  await writeFile(home, `import './api/echo/route';\n${await readFile(home, 'utf8')}`);
+  await expect(run('node', [bin, 'build'], { cwd, timeout: 15_000 })).rejects.toThrow(/Server module .* cannot be imported/);
+  await expect(run('node', [bin, 'start'], { cwd, timeout: 10_000 })).rejects.toThrow(/No completed TinyJS build/);
+}, 30_000);
