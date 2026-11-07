@@ -1,0 +1,14 @@
+{
+  "name": "tinyjs-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tinyjs dev",
+    "build": "tinyjs build",
+    "start": "tinyjs start"
+  },
+  "dependencies": {
+    "preact": "^10.28.0",
+    "tinyjs": "workspace:*"
+  }
+}
