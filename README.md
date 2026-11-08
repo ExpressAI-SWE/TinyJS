@@ -45,7 +45,7 @@ Ordinary internal anchors use client navigation. Add `data-reload` for full docu
 
 `tinyjs dev`, `tinyjs build`, and `tinyjs start` run from the app directory. An npm installation uses the same CLI on Node without Bun. `tinyjs build` writes the browser assets and server module to `.tinyjs/client` and `.tinyjs/server`. `tinyjs start` serves that output without loading Vite and reserves `/_tinyjs/` for generated assets. Run one build at a time per app and stop the production server before rebuilding in its directory.
 
-The build emits hashed assets, lazy route chunks, a manifest, raw/gzip statistics, and configurable budget warnings. The shared-client 3,000-byte gzip target excludes lazy route and optional feature chunks. Added navigation functionality can exceed that target; inspect `.tinyjs/stats.json` for actual sizes. No comparative speed claim is made.
+The build emits hashed assets, lazy route chunks, a manifest, raw/gzip statistics, and configurable budget warnings. The shared-client 3,000-byte gzip target excludes lazy route and optional feature chunks and remains unmet. Production omits support code for absent loading/error files and uses gzip level 9 for statistics and optional compressed assets. See [measured sizes](docs/performance.md) and `.tinyjs/stats.json` for actual output. No comparative speed claim is made.
 
 ## Optional modules and examples
 

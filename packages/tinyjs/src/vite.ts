@@ -108,18 +108,25 @@ async function loadConfig(root: string): Promise<TinyConfig> {
 
 async function diagnoseRoutes(root: string) {
   const pages: string[] = [], apis: string[] = [];
+  let loading = false, errors = false;
   async function visit(directory: string, relative: string) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = `${relative}/${entry.name}`;
       if (entry.isDirectory()) await visit(join(directory, entry.name), path);
       else if (entry.name === 'page.tsx' && !path.startsWith('/app/api/')) pages.push(path);
       else if (entry.name === 'route.ts' && path.startsWith('/app/api/')) apis.push(path);
+      if (!path.startsWith('/app/api/')) {
+        // Vite follows symlinks; retain support when this scan cannot inspect their targets.
+        loading ||= entry.name === 'loading.tsx' || entry.isSymbolicLink();
+        errors ||= entry.name === 'error.tsx' || entry.isSymbolicLink();
+      }
     }
   }
   try { await visit(join(root, 'app'), '/app'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('TinyJS needs an app directory containing page.tsx.'); throw error; }
   validateRoutes(pages, '/page.tsx'); validateRoutes(apis, '/route.ts');
   console.log(`TinyJS routes: ${pages.length} pages, ${apis.length} API handlers`);
+  return { loading, errors };
 }
 
 export async function build(root: string) {
@@ -128,10 +135,14 @@ export async function build(root: string) {
   await mkdir(output.dir, { recursive: true });
   await rm(output.metadata, { force: true });
   const settings = await loadConfig(root);
-  await diagnoseRoutes(root);
+  const routes = await diagnoseRoutes(root);
   const options = config(root);
   const client = await viteBuild({
     ...options,
+    define: {
+      'import.meta.env.TINYJS_LOADING': String(routes.loading),
+      'import.meta.env.TINYJS_ERRORS': String(routes.errors),
+    },
     base: assetBase,
     build: {
       outDir: output.client,
@@ -165,7 +176,7 @@ export async function build(root: string) {
   const statistics = client.output.filter((file) => file.type === 'chunk' || /\.(css|svg|json)$/.test(file.fileName)).map((file) => {
     const source = file.type === 'chunk' ? file.code : file.source;
     const raw = Buffer.from(source);
-    const gzip = gzipSync(raw);
+    const gzip = gzipSync(raw, { level: 9 });
     return { file: file.fileName, raw: raw.byteLength, gzip: gzip.byteLength, compressed: gzip };
   });
   if (settings.compress) for (const item of statistics) {
@@ -178,7 +189,7 @@ export async function build(root: string) {
   for (const name of files) {
     const chunk = client.output.find((file) => file.fileName === name);
     if (chunk?.type !== 'chunk') continue;
-    bytes += gzipSync(chunk.code).byteLength;
+    bytes += statistics.find((item) => item.file === name)!.gzip;
     for (const dependency of chunk.imports) files.add(dependency);
   }
   console.log(`Shared client JS: ${bytes} bytes gzip (goal: 3000 bytes)`);

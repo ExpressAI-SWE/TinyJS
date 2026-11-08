@@ -24,7 +24,7 @@ async function tree(element: HTMLElement) {
   const [Page, ...parents] = await Promise.all([pages[file](), ...layoutAncestry(file).filter((key) => key in layouts).map((key) => layouts[key]())]);
   const props = JSON.parse(element.dataset.props ?? '{"params":{},"query":{}}') as PageProps;
   let content = pageTree(Page, parents, props);
-  for (const errorFile of layoutAncestry(file).map(key => key.replace('layout.tsx', 'error.tsx')).reverse().filter(key => pages[key] && key !== file)) {
+  if (import.meta.env.TINYJS_ERRORS !== false) for (const errorFile of layoutAncestry(file).map(key => key.replace('layout.tsx', 'error.tsx')).reverse().filter(key => pages[key] && key !== file)) {
     const [ErrorPage, ...errorParents] = await Promise.all([pages[errorFile](), ...layoutAncestry(errorFile).filter(key => layouts[key]).map(key => layouts[key]())]);
     content = h(RouteBoundary, { key: errorFile + file + element.dataset.props, children: content, fallback: pageTree(ErrorPage, errorParents, props) });
   }
@@ -39,12 +39,14 @@ async function navigate(url: URL, push: boolean) {
   pending?.abort();
   pending = new AbortController();
   try {
-    const destination = matchRoute(Object.keys(pages).filter(key => key.endsWith('/page.tsx')), requestPath(url.pathname), '/page.tsx');
-    const fallback = layoutAncestry(destination?.file ?? '/app/not-found.tsx').map((key) => key.replace('layout.tsx', 'loading.tsx')).reverse().find((key) => loading[key]);
-    if (fallback) {
-      const Loading = await loading[fallback]();
-      if (id !== generation) return;
-      render(pageTree(Loading, []), root);
+    if (import.meta.env.TINYJS_LOADING !== false) {
+      const destination = matchRoute(Object.keys(pages).filter(key => key.endsWith('/page.tsx')), requestPath(url.pathname), '/page.tsx');
+      const fallback = layoutAncestry(destination?.file ?? '/app/not-found.tsx').map((key) => key.replace('layout.tsx', 'loading.tsx')).reverse().find((key) => loading[key]);
+      if (fallback) {
+        const Loading = await loading[fallback]();
+        if (id !== generation) return;
+        render(pageTree(Loading, []), root);
+      }
     }
     const response = await fetch(url, { signal: pending.signal, headers: { Accept: 'text/html' } });
     if (!response.headers.get('content-type')?.includes('text/html') || new URL(response.url).origin !== location.origin) throw new Error('Document navigation required');

@@ -148,6 +148,12 @@ test.each([['Node', 'node'], ['Bun', process.execPath]])('%s serves dev and inde
   const { stdout } = await run(runtime, [bin, 'build'], { cwd, timeout: 20_000 });
   expect(stdout).toMatch(/Shared client JS: [1-9]\d* bytes gzip \(goal: 3000 bytes\)/);
   const client = join(cwd, '.tinyjs/client/assets');
+  const stats = JSON.parse(await readFile(join(cwd, '.tinyjs/stats.json'), 'utf8'));
+  expect(stats.sharedGzip).toBeLessThan(6700);
+  for (const asset of stats.assets) {
+    const content = await readFile(join(cwd, '.tinyjs/client', asset.file));
+    expect(asset.raw).toBe(content.byteLength);
+  }
   const scripts = (await readdir(client)).filter((file) => file.endsWith('.js'));
   expect(scripts.length).toBeGreaterThan(1);
   for (const file of scripts) {
