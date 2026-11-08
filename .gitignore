@@ -3,3 +3,7 @@ dist/
 .tinyjs/
 .tinyjs-test-*/
 *.tgz
+
+.env
+.env.*
+!.env.example

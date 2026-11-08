@@ -1,0 +1,15 @@
+{
+  "name": "tinyjs-example-infinite-terrain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tinyjs dev",
+    "build": "tinyjs build",
+    "start": "tinyjs start"
+  },
+  "dependencies": {
+    "preact": "^10.28.0",
+    "tinyjs": "workspace:*",
+    "three": "^0.187.0"
+  }
+}

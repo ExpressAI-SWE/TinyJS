@@ -79,7 +79,7 @@ async function withServer(runtime: string, command: 'dev' | 'start', cwd: string
   }
 }
 
-async function checkApplication(url: string, command: 'dev' | 'start') {
+async function checkApplication(url: string, command: 'dev' | 'start', cwd: string) {
   const home = await fetch(url);
   expect(home.status).toBe(200);
   expect(await home.text()).toContain('<button type="button">Count: 0</button>');
@@ -124,6 +124,19 @@ async function checkApplication(url: string, command: 'dev' | 'start') {
     await page.getByRole('button', { name: 'Count: 2' }).waitFor();
     await page.getByRole('link', { name: 'About' }).click();
     await page.getByRole('heading', { name: 'About TinyJS' }).waitFor();
+    if (command === 'dev') {
+      await page.goto(url);
+      await page.getByRole('button', { name: 'Count: 0' }).waitFor();
+      const source = join(cwd, 'app/page.tsx');
+      await writeFile(source, (await readFile(source, 'utf8')).replace('<h1>TinyJS</h1>', '<h1>Updated TinyJS</h1>'));
+      await page.getByRole('heading', { name: 'Updated TinyJS' }).waitFor();
+      await mkdir(join(cwd, 'app/added'));
+      const discovered = page.waitForEvent('load');
+      await writeFile(join(cwd, 'app/added/page.tsx'), 'export default function Page() { return <h1>Discovered route</h1>; }');
+      await discovered;
+      await page.goto(url + '/added');
+      await page.getByRole('heading', { name: 'Discovered route' }).waitFor();
+    }
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -141,10 +154,10 @@ test.each([['Node', 'node'], ['Bun', process.execPath]])('%s serves dev and inde
     expect(await readFile(join(client, file), 'utf8')).not.toMatch(/SERVER_ONLY_TEST_MARKER|node:crypto|\/@vite\/client/);
   }
   expect(await readFile(join(cwd, '.tinyjs/server/server.mjs'), 'utf8')).toContain(marker);
-  await withServer(runtime, 'dev', cwd, (url) => checkApplication(url, 'dev'));
+  await withServer(runtime, 'dev', cwd, (url) => checkApplication(url, 'dev', cwd));
   const standalone = join(temporary, `${name}-production`);
   await cp(join(cwd, '.tinyjs'), join(standalone, '.tinyjs'), { recursive: true });
-  await withServer(runtime, 'start', standalone, (url) => checkApplication(url, 'start'));
+  await withServer(runtime, 'start', standalone, (url) => checkApplication(url, 'start', standalone));
 }, 60_000);
 
 test('rejects API modules in the browser graph and leaves no runnable build', async () => {
@@ -153,4 +166,19 @@ test('rejects API modules in the browser graph and leaves no runnable build', as
   await writeFile(home, `import './api/echo/route';\n${await readFile(home, 'utf8')}`);
   await expect(run('node', [bin, 'build'], { cwd, timeout: 15_000 })).rejects.toThrow(/Server module .* cannot be imported/);
   await expect(run('node', [bin, 'start'], { cwd, timeout: 10_000 })).rejects.toThrow(/No completed TinyJS build/);
+}, 30_000);
+
+test.each(['tinyjs/ai', './private.server'])('rejects server-only import %s', async (module) => {
+  const cwd = await fixture(module === 'tinyjs/ai' ? 'invalid-ai' : 'invalid-server');
+  await writeFile(join(cwd, 'app/private.server.ts'), 'export const secret = "SERVER_ONLY_TEST_MARKER";');
+  await writeFile(join(cwd, 'app/page.tsx'), `import '${module}'; export default function Page() { return <h1>Unsafe</h1>; }`);
+  await expect(run('node', [bin, 'build'], { cwd, timeout: 20_000 })).rejects.toThrow(/Server module .* cannot be imported/);
+}, 30_000);
+
+test('enforces configured gzip budgets without publishing a completed build', async () => {
+  const cwd = await fixture('budget');
+  await writeFile(join(cwd, 'tinyjs.config.json'), JSON.stringify({ budgets: { sharedGzip: 1, fail: true } }));
+  await expect(run('node', [bin, 'build'], { cwd, timeout: 20_000 })).rejects.toThrow(/performance budget exceeded/);
+  await expect(readFile(join(cwd, '.tinyjs/build.json'))).rejects.toThrow();
+  expect(JSON.parse(await readFile(join(cwd, '.tinyjs/stats.json'), 'utf8')).sharedGzip).toBeGreaterThan(1);
 }, 30_000);
