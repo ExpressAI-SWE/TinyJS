@@ -1,3 +1,4 @@
+// This page loads the greeting module only when the visitor presses the button.
 import { useState } from 'preact/hooks';
 import { createLoader } from 'tinyjs/loading';
 
@@ -7,6 +8,7 @@ export default function Page() {
   const [text, setText] = useState('Ready');
   const [busy, setBusy] = useState(false);
 
+  // The loader caches the imported greeting and the UI reports failures.
   async function loadGreeting() {
     setBusy(true);
     try {

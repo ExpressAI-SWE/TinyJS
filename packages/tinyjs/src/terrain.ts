@@ -1,9 +1,12 @@
+// These settings are shared by vertex generation and the chunk manager.
 export interface TerrainOptions { seed?: number; size?: number; segments?: number; radius?: number }
 
+// The same world coordinates and seed always produce the same height.
 export function terrainHeight(x: number, z: number, seed = 1) {
   return Math.sin(x * 0.025 + seed) * 3 + Math.cos(z * 0.03 - seed) * 3 + Math.sin((x + z) * 0.012 + seed * 2) * 5;
 }
 
+// Build positions for one chunk in world coordinates, so neighboring edges meet.
 export function terrainVertices(chunkX: number, chunkZ: number, options: TerrainOptions = {}) {
   const size = options.size ?? 32, segments = options.segments ?? 16, seed = options.seed ?? 1;
   if (!Number.isFinite(size) || size <= 0 || !Number.isInteger(segments) || segments < 1 || segments > 256 || !Number.isFinite(seed)) {
@@ -27,6 +30,7 @@ export function createTerrainChunks<T>(create: (x: number, z: number) => T, disp
   const chunks = new Map<string, T>();
   return {
     chunks: chunks as ReadonlyMap<string, T>,
+    // Keep chunks around the current position and release those that moved out of range.
     update(x: number, z: number) {
       if (!Number.isFinite(x) || !Number.isFinite(z)) throw new RangeError('Terrain coordinates must be finite.');
       const cx = Math.floor(x / size), cz = Math.floor(z / size), needed = new Set<string>();
@@ -34,6 +38,7 @@ export function createTerrainChunks<T>(create: (x: number, z: number) => T, disp
       for (const [key, chunk] of chunks) if (!needed.has(key)) { chunks.delete(key); dispose(chunk); }
       for (const key of needed) if (!chunks.has(key)) { const [a, b] = key.split(',').map(Number); chunks.set(key, create(a, b)); }
     },
+    // Release every remaining chunk when the terrain is no longer needed.
     dispose() { for (const chunk of chunks.values()) dispose(chunk); chunks.clear(); },
   };
 }

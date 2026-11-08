@@ -1,3 +1,4 @@
+// These tests check the Three.js integration and its game lifecycle helpers.
 import { expect, test } from 'bun:test';
 import { BoxGeometry, DirectionalLight, Mesh, MeshBasicMaterial, Scene, Texture } from 'three';
 import { createGame, disposeScene, preloadAssets } from '../packages/tinyjs/src/three.js';

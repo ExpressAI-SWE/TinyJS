@@ -1,3 +1,4 @@
+// These tests check terrain generation and the data used by the game renderer.
 import { expect, test } from 'bun:test';
 import { createTerrainChunks, terrainVertices } from '../packages/tinyjs/src/terrain.js';
 

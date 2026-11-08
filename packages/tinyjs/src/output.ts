@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+// The server and Vite build agree on this URL prefix and output directory structure.
 export const assetBase = '/_tinyjs/';
 
 export interface BuildAssets {

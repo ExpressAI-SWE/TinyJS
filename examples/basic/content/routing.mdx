@@ -1,0 +1,45 @@
+# Pages, layouts, and APIs
+
+TinyJS discovers `app/**/page.tsx` files as pages. Layouts wrap child pages; this playground's header stays in the root layout.
+
+## File-based routing
+
+```text
+app/page.tsx                 → /
+app/docs/page.tsx            → /docs
+app/lab/items/[id]/page.tsx   → /lab/items/:id
+app/api/hello/route.ts       → /api/hello
+```
+
+## Dynamic parameters
+
+Page components receive `params` and `query`. Try [the routing example](/lab/items/routing?from=docs): its content comes from the actual route parameter and query string.
+
+```tsx
+import type { PageProps } from 'tinyjs/routing';
+
+export default function Item({ params, query }: PageProps) {
+  return <p>{params.id}: {query.from}</p>;
+}
+```
+
+## An actual server endpoint
+
+The [hello endpoint](/api/hello) exports a native handler:
+
+```ts
+export function GET() {
+  return Response.json({ message: 'Hello from TinyJS' });
+}
+```
+
+Use the [API inspector](/lab) to fetch it and view the HTTP status and response. API handlers stay on the server; pages must not import server-only code.
+
+## Production
+
+```sh
+bun run build
+bun run --cwd examples/basic serve
+```
+
+The build emits browser assets and a server bundle into the example's `.tinyjs` directory. The production server uses those built files.

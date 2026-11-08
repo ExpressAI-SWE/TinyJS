@@ -1,7 +1,8 @@
 import { parseArgs } from 'node:util';
 
-const help = 'Usage: tinyjs <dev | build | start> [--host <host>] [--port <port>]';
+const help = 'Usage: tinyjs <dev | build | serve | test> [--host <host>] [--port <port>]';
 
+// Parse the command once, then load only the implementation needed for that command.
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -12,17 +13,24 @@ async function main() {
     return;
   }
   const [command] = positionals;
-  if (positionals.length !== 1 || !['dev', 'build', 'start'].includes(command)) throw new Error(help);
+  if (positionals.length !== 1 || !['dev', 'build', 'serve', 'test'].includes(command)) throw new Error(help);
 
   const root = process.cwd();
+  if (command === 'test') {
+    if (values.host !== undefined || values.port !== undefined) throw new Error('Host and port apply to dev and serve.');
+    const { runTests } = await import('./testing.js');
+    process.exitCode = await runTests(root);
+    return;
+  }
   process.env.NODE_ENV = command === 'dev' ? 'development' : 'production';
   if (command === 'build') {
-    if (values.host !== undefined || values.port !== undefined) throw new Error('Host and port apply to dev and start.');
+    if (values.host !== undefined || values.port !== undefined) throw new Error('Host and port apply to dev and serve.');
     const { build } = await import('./vite.js');
     await build(root);
     return;
   }
 
+  // Development and production servers share the same host and port validation.
   const host = values.host ?? '127.0.0.1';
   const port = values.port ?? '3000';
   if (!host || !/^\d+$/.test(port) || Number(port) > 65535) throw new Error('Specify a host and a port between 0 and 65535.');

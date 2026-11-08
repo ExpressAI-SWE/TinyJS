@@ -1,3 +1,4 @@
+// These tests use fake providers to check AI requests, streaming, limits, and errors without making network calls.
 import { expect, test } from 'bun:test';
 import { createAI, AIError } from '../packages/tinyjs/src/ai.js';
 import { streamChat } from '../packages/tinyjs/src/ai-client.js';

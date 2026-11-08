@@ -1,7 +1,8 @@
+// These tests build and run example applications to check how TinyJS works across its server, build, and browser parts.
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright-core';
@@ -28,6 +29,8 @@ async function fixture(name: string) {
   const cwd = join(temporary, name);
   await cp(join(root, 'examples/basic/app'), join(cwd, 'app'), { recursive: true });
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
+  await mkdir(join(cwd, 'node_modules'));
+  await symlink(join(root, 'packages/tinyjs'), join(cwd, 'node_modules/tinyjs'), 'junction');
   await mkdir(join(cwd, 'app/api/echo'));
   await writeFile(join(cwd, 'app/api/echo/route.ts'), `
     import { createHash } from 'node:crypto';
@@ -48,7 +51,7 @@ async function fixture(name: string) {
   return cwd;
 }
 
-async function withServer(runtime: string, command: 'dev' | 'start', cwd: string, check: (url: string) => Promise<void>) {
+async function withServer(runtime: string, command: 'dev' | 'serve', cwd: string, check: (url: string) => Promise<void>) {
   const child = spawn(runtime, [bin, command, '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = '';
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -79,7 +82,7 @@ async function withServer(runtime: string, command: 'dev' | 'start', cwd: string
   }
 }
 
-async function checkApplication(url: string, command: 'dev' | 'start', cwd: string) {
+async function checkApplication(url: string, command: 'dev' | 'serve', cwd: string) {
   const home = await fetch(url);
   expect(home.status).toBe(200);
   expect(await home.text()).toContain('<button type="button">Count: 0</button>');
@@ -128,7 +131,7 @@ async function checkApplication(url: string, command: 'dev' | 'start', cwd: stri
       await page.goto(url);
       await page.getByRole('button', { name: 'Count: 0' }).waitFor();
       const source = join(cwd, 'app/page.tsx');
-      await writeFile(source, (await readFile(source, 'utf8')).replace('<h1>TinyJS</h1>', '<h1>Updated TinyJS</h1>'));
+      await writeFile(source, (await readFile(source, 'utf8')).replace('<h1>Small by design.<br />Big on possibility.</h1>', '<h1>Updated TinyJS</h1>'));
       await page.getByRole('heading', { name: 'Updated TinyJS' }).waitFor();
       await mkdir(join(cwd, 'app/added'));
       const discovered = page.waitForEvent('load');
@@ -157,7 +160,7 @@ test.each([['Node', 'node'], ['Bun', process.execPath]])('%s serves dev and inde
   await withServer(runtime, 'dev', cwd, (url) => checkApplication(url, 'dev', cwd));
   const standalone = join(temporary, `${name}-production`);
   await cp(join(cwd, '.tinyjs'), join(standalone, '.tinyjs'), { recursive: true });
-  await withServer(runtime, 'start', standalone, (url) => checkApplication(url, 'start', standalone));
+  await withServer(runtime, 'serve', standalone, (url) => checkApplication(url, 'serve', standalone));
 }, 60_000);
 
 test('rejects API modules in the browser graph and leaves no runnable build', async () => {
@@ -165,7 +168,7 @@ test('rejects API modules in the browser graph and leaves no runnable build', as
   const home = join(cwd, 'app/page.tsx');
   await writeFile(home, `import './api/echo/route';\n${await readFile(home, 'utf8')}`);
   await expect(run('node', [bin, 'build'], { cwd, timeout: 15_000 })).rejects.toThrow(/Server module .* cannot be imported/);
-  await expect(run('node', [bin, 'start'], { cwd, timeout: 10_000 })).rejects.toThrow(/No completed TinyJS build/);
+  await expect(run('node', [bin, 'serve'], { cwd, timeout: 10_000 })).rejects.toThrow(/No completed TinyJS build/);
 }, 30_000);
 
 test.each(['tinyjs/ai', './private.server'])('rejects server-only import %s', async (module) => {

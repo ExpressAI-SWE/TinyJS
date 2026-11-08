@@ -1,6 +1,6 @@
 # Migrating from Stage 1
 
-Existing static pages, nested layouts, Web API routes, CLI commands, and client/server output paths remain valid. Recompile TinyJS and rebuild apps after updating; deploy all output from the same build.
+Existing static pages, nested layouts, Web API routes, and client/server output paths remain valid. Replace native `tinyjs start` with `tinyjs serve`. The complete native CLI is `dev`, `build`, `serve`, and `test`; see [testing](testing.md). Recompile TinyJS and rebuild apps after updating; deploy all output from the same build.
 
 - Pages may receive `{ params, query }`; components ignoring props need no change. `[name]` and terminal `[...name]` now denote route patterns rather than literal bracketed paths. Static routes take precedence.
 - Internal anchors now navigate on the client. Add `data-reload` where a document reload is needed. Modified clicks, downloads, external links, and explicit targets retain browser behavior.

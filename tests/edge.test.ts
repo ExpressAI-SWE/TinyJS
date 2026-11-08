@@ -1,3 +1,4 @@
+// These tests check how the edge adapter turns requests into framework responses.
 import { expect, test } from 'bun:test';
 import { createEdgeHandler } from '../packages/tinyjs/src/edge.js';
 

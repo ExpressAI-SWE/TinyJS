@@ -1,3 +1,4 @@
+// These tests check resource loading, caching, cancellation, priorities, and download strategies.
 import { expect, test } from 'bun:test';
 import { bindPrefetchHints, createLoader, prefersReducedData } from '../packages/tinyjs/src/loading.js';
 

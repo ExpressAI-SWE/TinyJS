@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Handler } from './handler.js';
 
+// Adapt Node HTTP requests and responses to the web Request/Response handler.
 export function httpListener(handle: Handler) {
   return async (incoming: IncomingMessage, outgoing: ServerResponse) => {
     const controller = new AbortController();
@@ -15,6 +16,7 @@ export function httpListener(handle: Handler) {
       outgoing.writeHead(501, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not Implemented');
       return;
     }
+    // Validate the request target and copy headers and any body into a web Request.
     let request: Request;
     try {
       const target = incoming.url ?? '/';
@@ -36,6 +38,7 @@ export function httpListener(handle: Handler) {
       return;
     }
 
+    // Stream the handler response back to Node, preserving separate cookies.
     try {
       const response = await handle(request);
       outgoing.statusCode = response.status;
@@ -52,6 +55,7 @@ export function httpListener(handle: Handler) {
       }
       await pipeline(response.body, outgoing);
     } catch (error) {
+      // Once headers have been sent, close the connection instead of sending a second response.
       if (controller.signal.aborted) return;
       console.error(error);
       if (outgoing.headersSent) {

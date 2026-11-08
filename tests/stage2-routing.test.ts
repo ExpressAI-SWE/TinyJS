@@ -1,3 +1,4 @@
+// These tests check dynamic routes and how matching paths reach pages and API handlers.
 import { expect, test } from 'bun:test';
 import { h } from 'preact';
 import { createHandler } from '../packages/tinyjs/src/handler.js';
