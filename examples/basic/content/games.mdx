@@ -1,0 +1,39 @@
+# Real-time worlds
+
+The [arcade](/games) uses `tinyjs/three` for a browser-only WebGL lifecycle, and `tinyjs/terrain` for bounded procedural terrain.
+
+## Load in a browser effect
+
+```tsx
+useEffect(() => {
+  // Import and initialize inside the effect, never during SSR.
+  // Handle async cancellation before starting the game.
+  // Return cleanup that calls game.dispose().
+}, []);
+```
+
+The arcade renders a stable loading shell on the server. Press **Start game** to download the scene and initialize the renderer. No Three.js work is needed to read these docs.
+
+## Input and scenes
+
+`createGame` supplies the scene, camera, Three.js module, keyboard codes, and normalized pointer state. Keyboard input belongs to the focused game container. The crystal game also supports dragging with a pointer or touch.
+
+```ts
+await game.loadScene({
+  setup({ three: T, scene }) {
+    scene.add(new T.Mesh(
+      new T.BoxGeometry(), new T.MeshNormalMaterial()
+    ));
+  },
+  update(delta, { scene }) { scene.rotation.y += delta; }
+});
+game.start();
+```
+
+## Ownership and cleanup
+
+Scene meshes own their geometry and materials. TinyJS disposes them when unloading the scene. The terrain scene additionally removes and disposes streamed chunks and its shared ground material in its cleanup callback. Restarting, switching scenes, and leaving the arcade all dispose the old game, including its renderer, animation loop, event listeners, and canvas.
+
+## Terrain without an unbounded world
+
+Terrain uses seeded heights and a moving window of at most 25 chunks. The bus demonstrates driving and chunk streaming, without collision or suspension physics. Pause and resume use the real game lifecycle. If WebGL initialization fails, the arcade reports it and lets you retry.

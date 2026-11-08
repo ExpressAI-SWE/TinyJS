@@ -18,6 +18,7 @@ const assetTypes = new Map([
 
 const plainText = { 'Content-Type': 'text/plain; charset=utf-8' };
 
+// Load the completed build and connect its application handler to a Node server.
 export async function start(root: string, host: string, port: number) {
   const output = outputPaths(root);
   const metadata = await readFile(output.metadata, 'utf8').catch((error) => {
@@ -39,6 +40,7 @@ export async function start(root: string, host: string, port: number) {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response('Method Not Allowed', { status: 405, headers: { ...plainText, Allow: 'GET, HEAD' } });
     }
+    // Only serve generated asset names from the client output directory.
     const file = path.slice(assetBase.length);
     if (!/^assets\/[\w.-]+$/.test(file) || file === 'assets/.' || file === 'assets/..') {
       return new Response('Not Found', { status: 404, headers: plainText });
@@ -46,6 +48,7 @@ export async function start(root: string, host: string, port: number) {
     try {
       let compressed = false;
       let content: Buffer;
+      // Prefer a precompressed asset when the browser accepts gzip, otherwise serve the original.
       const acceptsGzip = (request.headers.get('accept-encoding') ?? '').split(',').some((entry) => {
         const [encoding, ...parameters] = entry.trim().split(';');
         return encoding === 'gzip' && !parameters.some((parameter) => /^\s*q\s*=\s*0(?:\.0*)?\s*$/.test(parameter));

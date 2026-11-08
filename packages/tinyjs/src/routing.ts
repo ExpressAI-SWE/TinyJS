@@ -1,3 +1,4 @@
+// Turn an app file path into a URL path and normalize incoming paths the same way.
 export function routePath(file: string, suffix: '/page.tsx' | '/route.ts') {
   return file.slice('/app'.length, -suffix.length).split('/').map(encodeURIComponent).join('/') || '/';
 }
@@ -9,6 +10,7 @@ export function requestPath(pathname: string) {
 
 export interface RouteMatch { file: string; params: Record<string, string | string[]> }
 
+// Check route names and detect ambiguous URL patterns before serving or building.
 export function validateRoutes(files: string[], suffix: '/page.tsx' | '/route.ts') {
   const shapes = new Map<string, string>();
   for (const file of files) {
@@ -39,6 +41,7 @@ export function matchRoute(files: string[], path: string, suffix: '/page.tsx' | 
     }
     return a.file.localeCompare(b.file);
   });
+  // Try routes in priority order and collect decoded dynamic segments for the page or API.
   for (const { file, parts } of candidates) {
     const params: RouteMatch['params'] = Object.create(null) as RouteMatch['params'];
     let index = 0;

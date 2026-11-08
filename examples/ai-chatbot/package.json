@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "tinyjs dev",
     "build": "tinyjs build",
-    "start": "tinyjs start"
+    "serve": "tinyjs serve",
+    "test": "tinyjs test",
+    "start": "bun run build && bun run serve"
   },
   "dependencies": {
     "preact": "^10.28.0",

@@ -25,6 +25,6 @@ export function GET() { return Response.json({ time: new Date().toISOString() })
 
 Run another example with `bun run --cwd examples/dynamic-routing dev`; substitute `ai-chatbot`, `three-scene`, `infinite-terrain`, or `lazy-loading`. Each has `dev`, `build`, and `start` scripts. AI needs [server environment configuration](ai.md). Three.js is installed in this workspace for its examples, but remains optional for framework consumers.
 
-Stop dev before `bun run build`, then `bun run start`. CLI commands run from the application root. `--host` and `--port` apply to `dev` and `start`; `--help` describes usage.
+Stop dev before `bun run start` (build and serve), or run `bun run build` then `bun run serve`. CLI commands run from the application root. `--host` and `--port` apply to `dev` and `serve`; `--help` describes usage. Use `tinyjs test` for all project tests; see [testing](testing.md) for discovery and prerequisites.
 
 Run `bun run compile`, `bun run typecheck`, and `bun run test` for checks. The test script includes compile, example type checks, unit tests, and browser integration tests. Install Chromium with `bun run browser:install` or set `TINYJS_CHROMIUM_PATH` to an existing executable. These commands describe prerequisites, not a claim that checks pass on every machine.

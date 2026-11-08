@@ -11,7 +11,7 @@
     "compile": "tsc -p packages/tinyjs",
     "typecheck": "tsc -p examples/basic && tsc -p examples/ai-chatbot && tsc -p examples/infinite-terrain && tsc -p examples/three-scene && tsc -p examples/dynamic-routing && tsc -p examples/lazy-loading",
     "browser:install": "playwright-core install chromium",
-    "test": "bun run compile && bun run typecheck && bun test",
+    "test": "bun run compile && bun run typecheck && bun packages/tinyjs/bin/tinyjs.js test",
     "dev": "bun run --cwd examples/basic dev",
     "build": "bun run --cwd examples/basic build",
     "start": "bun run --cwd examples/basic start"
@@ -22,6 +22,7 @@
     "playwright-core": "^1.58.0",
     "preact": "^10.28.0",
     "three": "^0.187.0",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }
 }

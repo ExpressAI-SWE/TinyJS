@@ -1,6 +1,6 @@
 # Deployment
 
-Build from the application directory with `tinyjs build`, then run `tinyjs start`.
+Build from the application directory with `tinyjs build`, then run `tinyjs serve`.
 The production server reads `.tinyjs/build.json`, serves hashed browser files in
 `.tinyjs/client`, and imports `.tinyjs/server/server.mjs`. Deploy all three
 together. Build one application at a time and stop its server before rebuilding
@@ -46,7 +46,7 @@ export default {
 Configure the platform's asset binding to map the `/_tinyjs/` URL prefix to
 `.tinyjs/client/`; providers differ, so this mapping is a deployment requirement.
 Bundle the generated application and its dependencies using the target platform's
-tooling. Node filesystem access, the `tinyjs start` listener, Node-only application
+tooling. Node filesystem access, the `tinyjs serve` listener, Node-only application
 API imports, and Bun-specific APIs are unsupported in this adapter.
 
 The adapter is covered by Web Request/Response tests under Bun. It has **not**

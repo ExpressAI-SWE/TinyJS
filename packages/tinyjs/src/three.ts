@@ -1,5 +1,6 @@
 import type { PerspectiveCamera, Scene, WebGLRenderer, Object3D, Material, Texture } from 'three';
 
+// A scene receives these shared objects and input state during setup and updates.
 export interface GameContext {
   three: typeof import('three');
   scene: Scene;
@@ -8,6 +9,7 @@ export interface GameContext {
   input: { keys: ReadonlySet<string>; pointer: { x: number; y: number; down: boolean } };
   signal: AbortSignal;
 }
+// Setup can return cleanup; update runs once per rendered frame.
 export interface GameScene {
   setup?: (context: GameContext) => void | (() => void) | Promise<void | (() => void)>;
   update?: (delta: number, context: GameContext) => void;
@@ -34,6 +36,7 @@ export function disposeScene(scene: Object3D) {
   scene.clear();
 }
 
+// Create the browser renderer and manage scenes, input, and their lifetime.
 export async function createGame(container: HTMLElement, options: {
   pixelRatio?: number;
   shadows?: boolean;
@@ -60,6 +63,7 @@ export async function createGame(container: HTMLElement, options: {
   let last = 0;
   let frames = 0;
   let elapsed = 0;
+  // Keep the drawing surface and camera matched to the container.
   const resize = () => {
     const width = Math.max(container.clientWidth, 1), height = Math.max(container.clientHeight, 1);
     renderer.setSize(width, height, false);
@@ -71,6 +75,7 @@ export async function createGame(container: HTMLElement, options: {
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none';
   observer.observe(container);
   resize();
+  // All input listeners share a lifetime, so disposal removes them together.
   const listen = (target: EventTarget, name: string, fn: EventListener) => target.addEventListener(name, fn, { signal: lifetime.signal });
   listen(window, 'keydown', (event) => {
     if (!container.contains(document.activeElement)) return;
@@ -80,6 +85,7 @@ export async function createGame(container: HTMLElement, options: {
   });
   listen(window, 'keyup', (event) => { keys.delete((event as KeyboardEvent).code); });
   listen(window, 'blur', () => { keys.clear(); pointer.down = false; });
+  // Convert pointer position to the -1 to 1 coordinates used by Three.js.
   listen(renderer.domElement, 'pointermove', (event) => {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((event as PointerEvent).clientX - rect.left) / Math.max(rect.width, 1) * 2 - 1;
@@ -87,6 +93,7 @@ export async function createGame(container: HTMLElement, options: {
   });
   listen(renderer.domElement, 'pointerdown', () => { container.focus(); pointer.down = true; });
   listen(window, 'pointerup', () => { pointer.down = false; });
+  // The frame loop updates the active scene before rendering and reporting FPS.
   function pause() { running = false; last = 0; renderer.setAnimationLoop(null); }
   function resume() {
     if (disposed) throw new Error('Game is disposed.');
@@ -105,11 +112,13 @@ export async function createGame(container: HTMLElement, options: {
       } catch (error) { pause(); options.onError?.(error); }
     });
   }
+  // Pause rendering in a hidden tab and reset timing before it becomes visible.
   listen(document, 'visibilitychange', () => {
     keys.clear(); last = 0;
     if (document.hidden) renderer.setAnimationLoop(null);
     else if (running) resume();
   });
+  // Scene cleanup runs before its graphics resources are released.
   const unload = () => {
     if (!current) return;
     current.controller.abort();
@@ -119,6 +128,7 @@ export async function createGame(container: HTMLElement, options: {
     camera, renderer,
     get scene() { return current?.context.scene; },
     start: resume, pause, resume,
+    // Prepare the next scene before replacing the current one; cancel older loads.
     async loadScene(load: GameScene | (() => Promise<GameScene>)) {
       if (disposed) throw new Error('Game is disposed.');
       pending?.abort();
@@ -142,6 +152,7 @@ export async function createGame(container: HTMLElement, options: {
         throw error;
       }
     },
+    // Stop work and release browser and graphics resources when the game ends.
     dispose() {
       if (disposed) return;
       disposed = true; pause(); pending?.abort(); lifetime.abort(); observer.disconnect();
@@ -156,6 +167,7 @@ export async function preloadAssets(urls: string[], options: {
 } = {}) {
   const concurrency = options.concurrency ?? 4;
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) throw new RangeError('concurrency must be 1–32.');
+  // Fetch each URL once, with workers sharing the next item to load.
   const unique = [...new Set(urls)], results = new Map<string, ArrayBuffer>();
   const controller = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;

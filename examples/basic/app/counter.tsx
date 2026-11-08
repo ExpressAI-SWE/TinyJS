@@ -1,3 +1,4 @@
+// The home page uses this component to demonstrate browser-side Preact state.
 import { useState } from 'preact/hooks';
 
 export default function Counter() {

@@ -1,3 +1,4 @@
+// TinyJS fills params.id from the URL and query from its query string.
 import type { PageProps } from 'tinyjs/routing';
 
 export const metadata = { title: 'User profile', description: 'Dynamic TinyJS route' };

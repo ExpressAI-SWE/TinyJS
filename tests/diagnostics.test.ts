@@ -1,3 +1,4 @@
+// These tests check that route validation reports ambiguous or invalid route names.
 import { expect, test } from 'bun:test';
 import { validateRoutes } from '../packages/tinyjs/src/routing.js';
 test('route diagnostics reject ambiguity, malformed catch-alls and duplicate params', () => {

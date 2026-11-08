@@ -1,9 +1,11 @@
+// This page starts the shared terrain scene in the browser and disposes it when the page leaves.
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 export default function TerrainGame() {
   const container = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState('Loading terrain…');
   const [attempt, setAttempt] = useState(0);
+  // Restart creates a fresh game; cleanup stops the previous one.
   useEffect(() => {
     let cancelled = false;
     let game: { dispose(): void } | undefined;

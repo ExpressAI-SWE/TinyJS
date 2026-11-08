@@ -1,3 +1,4 @@
+// TinyJS renders this page at / and places the interactive chat inside it.
 import Chatbot from './chatbot';
 
 export default function Page() {

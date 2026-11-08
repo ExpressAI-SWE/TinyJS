@@ -23,6 +23,7 @@ function methodNotAllowed(methods: string[]) {
   return textResponse('Method Not Allowed', 405, { Allow: methods.join(', ') });
 }
 
+// Build a request handler from the app files discovered by server-entry.ts.
 export function createHandler(
   pages: Record<string, ComponentType<PageProps>>,
   layouts: Record<string, Layout>,
@@ -40,6 +41,7 @@ export function createHandler(
       return textResponse('Bad Request', 400);
     }
 
+    // API routes run first and receive the dynamic parameters from the matching URL.
     const apiMatch = matchRoute(Object.keys(apis), path, '/route.ts');
     const api = apiMatch && apis[apiMatch.file];
     if (api) {
@@ -54,6 +56,7 @@ export function createHandler(
       return response;
     }
 
+    // Otherwise render a page inside its parent layouts, or use the not-found page.
     const match = matchRoute(Object.keys(pages), path, '/page.tsx');
     const file = match?.file ?? '/app/not-found.tsx';
     const Page = match ? pages[file] : special.notFound;
@@ -66,6 +69,7 @@ export function createHandler(
     let status = match ? 200 : 404;
     let rendered: string;
     let errorFile: string | undefined;
+    // If rendering fails, try the nearest error page first and then its ancestors.
     try { rendered = renderToString(h(Fragment, null, tree)); } catch (error) {
       let recovered = false;
       for (const candidate of layoutAncestry(file).map((key) => key.replace('layout.tsx', 'error.tsx')).reverse()) {
@@ -81,6 +85,7 @@ export function createHandler(
       if (!recovered) throw error;
       status = 500;
     }
+    // Send the rendered page and props together so browser-entry.ts can hydrate the same tree.
     const metadata = special.metadata?.[file];
     const document = h('html', { lang: 'en' },
       h('head', null,
@@ -101,6 +106,7 @@ export function createHandler(
     });
   }
 
+  // HEAD has the same status and headers as GET, but must not return a body.
   return async (request) => {
     const response = await dispatch(request);
     if (request.method !== 'HEAD' || !response.body) return response;

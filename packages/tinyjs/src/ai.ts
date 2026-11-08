@@ -1,3 +1,4 @@
+// These types describe the messages and settings shared by server-side AI calls.
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 export interface ChatUsage { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 export interface ChatRequest { messages: ChatMessage[]; signal?: AbortSignal; onUsage?: (usage: ChatUsage) => void }
@@ -18,6 +19,7 @@ export interface AIOptions {
   maxTokens?: number;
   fetch?: typeof globalThis.fetch;
 }
+// Give callers a consistent error category without exposing provider details.
 export class AIError extends Error {
   constructor(public readonly code: 'configuration' | 'validation' | 'upstream' | 'malformed' | 'limit' | 'timeout' | 'cancelled', message: string, public readonly status?: number) {
     super(message); this.name = 'AIError';
@@ -29,12 +31,14 @@ function positive(value: number, name: string) {
   if (!Number.isSafeInteger(value) || value <= 0) throw new AIError('configuration', `${name} must be a positive integer.`);
   return value;
 }
+// Check incoming messages before sending them to an external provider.
 export function validateMessages(value: unknown): asserts value is ChatMessage[] {
   if (!Array.isArray(value) || !value.length || value.length > 100 || value.some(message =>
     !object(message) || !['system', 'user', 'assistant'].includes(String(message.role)) || typeof message.content !== 'string')) {
     throw new AIError('validation', 'Provide between 1 and 100 text messages with valid roles.');
   }
 }
+// Keep only valid token counts from the provider response.
 function usage(value: unknown): ChatUsage | undefined {
   if (!object(value)) return;
   const result: ChatUsage = {};
@@ -43,6 +47,7 @@ function usage(value: unknown): ChatUsage | undefined {
   }
   return result;
 }
+// Create a server-only provider; the browser talks to an app endpoint instead.
 export function createAI(options: AIOptions): AIProvider {
   if (typeof window !== 'undefined') throw new AIError('configuration', 'AI providers must run on the server.');
   if (options.provider !== 'openai-compatible' || !options.baseURL || !options.model) throw new AIError('configuration', 'Set provider, AI_BASE_URL and AI_MODEL.');
@@ -55,6 +60,7 @@ export function createAI(options: AIOptions): AIProvider {
   const retries = options.retries ?? 2;
   if (!Number.isSafeInteger(retries) || retries < 0 || retries > 5) throw new AIError('configuration', 'retries must be between 0 and 5.');
 
+  // Build the provider request and connect cancellation, timeout, and retry handling.
   async function request(input: ChatRequest, streaming: boolean) {
     validateMessages(input.messages);
     const messages = options.systemPrompt ? [{ role: 'system', content: options.systemPrompt }, ...input.messages] : input.messages;
@@ -94,6 +100,7 @@ export function createAI(options: AIOptions): AIProvider {
       }
     } catch (error) { cleanup(); throw error; }
   }
+  // Read response bytes with a size limit and release the reader on every exit.
   async function* bounded(response: Response, signal: AbortSignal, limit: number) {
     const reader = response.body!.getReader();
     const aborted = () => { void reader.cancel(signal.reason).catch(() => {}); };
@@ -120,6 +127,7 @@ export function createAI(options: AIOptions): AIProvider {
     }
   }
   return {
+    // A normal completion is read as one JSON response.
     async chat(input) {
       const { response, controller, cleanup } = await request(input, false);
       try {
@@ -134,6 +142,7 @@ export function createAI(options: AIOptions): AIProvider {
         return { text: first.message.content, usage: tokens };
       } finally { cleanup(); }
     },
+    // Streaming completions arrive as events; expose only their text to the app.
     async stream(input) {
       const { response, controller, cleanup } = await request(input, true);
       async function* chunks() {
@@ -142,6 +151,7 @@ export function createAI(options: AIOptions): AIProvider {
           for await (const chunk of bounded(response, controller.signal, outputLimit * 8)) {
             pending = (pending + decoder.decode(chunk, { stream: true })).replace(/\r\n/g, '\n');
             let boundary: number;
+            // A blank line ends one event, even when network chunks split it.
             while ((boundary = pending.indexOf('\n\n')) >= 0) {
               const frame = pending.slice(0, boundary); pending = pending.slice(boundary + 2);
               const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
@@ -164,6 +174,7 @@ export function createAI(options: AIOptions): AIProvider {
           throw new AIError('malformed', 'AI stream ended before its completion marker.');
         } finally { controller.abort(); cleanup(); }
       }
+      // Adapt the event iterator to the web stream returned to the caller.
       const iterator = chunks();
       return new ReadableStream<Uint8Array>({
         async pull(destination) {

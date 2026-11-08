@@ -12,6 +12,7 @@ export interface EdgeOptions {
 export function createEdgeHandler(options: EdgeOptions): Handler {
   return async (request) => {
     try {
+      // Application routes go to the shared handler; only built assets use the platform binding.
       const path = new URL(request.url).pathname;
       if (!path.startsWith('/_tinyjs/')) return await options.application(request);
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -20,6 +21,7 @@ export function createEdgeHandler(options: EdgeOptions): Handler {
       if (!/^\/_tinyjs\/assets\/[\w.-]+$/.test(path) || /\/\.{1,2}$/.test(path)) {
         return new Response('Not Found', { status: 404 });
       }
+      // Return safe cache headers and omit the body for HEAD requests.
       const response = await options.assets.fetch(request);
       const headers = new Headers(response.headers);
       headers.set('X-Content-Type-Options', 'nosniff');

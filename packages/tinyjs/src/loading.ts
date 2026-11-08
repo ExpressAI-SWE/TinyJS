@@ -38,6 +38,7 @@ export function createLoader<T>(options: LoaderOptions<T> = {}) {
   let disposed = false;
   const abortError = () => new DOMException('Resource load cancelled', 'AbortError');
 
+  // Start the highest-priority waiting loads while respecting the concurrency limit.
   function pump() {
     queue.sort((a, b) => b.priority - a.priority);
     while (!disposed && active < concurrency && queue.length) {
@@ -49,6 +50,7 @@ export function createLoader<T>(options: LoaderOptions<T> = {}) {
           options.dispose?.(value);
           throw entry.controller.signal.reason ?? abortError();
         }
+        // Keep recently used resources and dispose of the oldest when the cache is full.
         cache.set(entry.key, value);
         while (cache.size > maxEntries) {
           const key = cache.keys().next().value!;
@@ -69,6 +71,7 @@ export function createLoader<T>(options: LoaderOptions<T> = {}) {
     }
   }
 
+  // Cancel the shared load once nobody needs it, or when the cache is cleared.
   function cancel(entry: Entry) {
     entry.controller.abort(abortError());
     if (pending.get(entry.key) === entry) pending.delete(entry.key);
@@ -77,6 +80,7 @@ export function createLoader<T>(options: LoaderOptions<T> = {}) {
     if (index !== -1) queue.splice(index, 1);
   }
 
+  // Share one in-flight load per key while letting each caller cancel independently.
   function load(key: string, factory: (context: LoadContext) => T | Promise<T>, settings: LoadOptions = {}): Promise<T> {
     if (disposed) return Promise.reject(new Error('Loader has been disposed.'));
     if (!key) return Promise.reject(new TypeError('A non-empty resource key is required.'));
@@ -138,6 +142,7 @@ export function createLoader<T>(options: LoaderOptions<T> = {}) {
     return result;
   }
 
+  // Release cached values and cancel pending work for one key or the whole loader.
   function clear(key?: string) {
     for (const entry of [...pending.values()]) if (key === undefined || entry.key === key) cancel(entry);
     for (const [name, value] of cache) {
@@ -163,6 +168,7 @@ export function createLoader<T>(options: LoaderOptions<T> = {}) {
   };
 }
 
+// Skip optional prefetching when the browser or network asks to save data.
 export function prefersReducedData() {
   const connection = typeof navigator === 'undefined' ? undefined :
     (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;

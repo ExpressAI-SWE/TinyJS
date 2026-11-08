@@ -1,3 +1,4 @@
+// These browser tests check the routing and page behavior provided by the framework.
 import { expect, test } from 'bun:test';
 import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
@@ -37,7 +38,7 @@ test('Stage 2 production routing hydrates, navigates, cancels races and builds r
   await run('node',[bin,'build'],{cwd,timeout:30000});
   expect((await readdir(assetDir)).sort()).toEqual(first);
   expect(await Promise.all(first.map(async file => createHash('sha256').update(await readFile(join(assetDir,file))).digest('hex')))).toEqual(hashes);
-  child=spawn('node',[bin,'start','--port','0'],{cwd,stdio:['ignore','pipe','pipe']});
+  child=spawn('node',[bin,'serve','--port','0'],{cwd,stdio:['ignore','pipe','pipe']});
   let logs='';
   const url=await new Promise<string>((resolve,reject)=>{
    const timeout=setTimeout(()=>reject(Error(logs)),15000);

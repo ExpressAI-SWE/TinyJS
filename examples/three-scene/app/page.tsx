@@ -1,8 +1,10 @@
+// This page creates a browser-only TinyJS game with a rotating Three.js cube.
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 export default function ThreeScene() {
   const host = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState('Loading scene…');
+  // Create the scene after the browser mounts; cleanup also handles a cancelled load.
   useEffect(() => {
     let cancelled = false;
     let game: { dispose(): void } | undefined;

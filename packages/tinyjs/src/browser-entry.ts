@@ -5,6 +5,7 @@ import type { Layout, PageProps } from './route-tree.js';
 import { matchRoute, requestPath } from './routing.js';
 import { prefersReducedData } from './loading.js';
 
+// Vite discovers the browser-loadable app files; the server provides the initial page and props.
 const pages = import.meta.glob<ComponentType<PageProps>>(['/app/**/page.tsx', '/app/**/error.tsx', '/app/not-found.tsx', '!/app/api/**'], { import: 'default' });
 const layouts = import.meta.glob<Layout>(['/app/**/layout.tsx', '!/app/api/**'], { import: 'default' });
 const loading = import.meta.glob<ComponentType<PageProps>>('/app/**/loading.tsx', { import: 'default' });
@@ -12,12 +13,14 @@ const root = document.getElementById('tinyjs-root');
 let generation = 0;
 let pending: AbortController | undefined;
 
+// Each route error boundary displays its matching fallback if a child fails in the browser.
 class RouteBoundary extends Component<{ children: ComponentChild; fallback: ComponentChild }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
 
+// Rebuild the server-rendered page and layout tree, including its nested error fallbacks.
 async function tree(element: HTMLElement) {
   const file = element.dataset.page!;
   if (!pages[file]) throw new Error(`Unknown TinyJS page: ${file}`);
@@ -33,6 +36,7 @@ async function tree(element: HTMLElement) {
 
 if (root?.dataset.page) hydrate(await tree(root), root);
 
+// Fetch the next server-rendered page and update the existing document without a full reload.
 async function navigate(url: URL, push: boolean) {
   if (!root) return;
   const id = ++generation;
@@ -46,6 +50,7 @@ async function navigate(url: URL, push: boolean) {
       if (id !== generation) return;
       render(pageTree(Loading, []), root);
     }
+    // A newer navigation cancels this request and takes precedence over its result.
     const response = await fetch(url, { signal: pending.signal, headers: { Accept: 'text/html' } });
     if (!response.headers.get('content-type')?.includes('text/html') || new URL(response.url).origin !== location.origin) throw new Error('Document navigation required');
     const document = new DOMParser().parseFromString(await response.text(), 'text/html');
@@ -77,6 +82,7 @@ async function navigate(url: URL, push: boolean) {
   }
 }
 
+// Intercept ordinary same-origin page links; leave downloads, API links and modified clicks alone.
 document.addEventListener('click', (event) => {
   const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
   if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.hasAttribute('download') || link.target || link.dataset.reload !== undefined) return;

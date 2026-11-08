@@ -1,3 +1,4 @@
+// TinyJS calls POST for /api/chat; this server route keeps provider settings out of the browser.
 import { AIError, createAI, validateMessages } from 'tinyjs/ai';
 
 export async function POST(request: Request) {
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
         body += decoder.decode(value, { stream: true });
       }
     } finally { await reader.cancel(); reader.releaseLock(); }
+    // Validate messages before sending them to the configured provider.
     const data: unknown = JSON.parse(body + decoder.decode());
     const messages: unknown = data && typeof data === 'object' && 'messages' in data ? data.messages : undefined;
     validateMessages(messages);

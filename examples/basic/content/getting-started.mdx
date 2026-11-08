@@ -1,0 +1,37 @@
+import Counter from '../../counter';
+
+# A tiny starting point
+
+TinyJS pairs Preact with Vite, server rendering, file-based routing, and browser hydration. This guide is **real MDX**, compiled to Preact before the demo starts.
+
+## Run the playground
+
+```sh
+bun install
+bun run compile
+bun run dev
+```
+
+Open the address printed by TinyJS. The root demo lives in `examples/basic`.
+
+## Your first page
+
+Create `app/page.tsx`. Export a Preact component and TinyJS renders it on the server, then hydrates it in the browser.
+
+```tsx
+export default function Home() {
+  return <h1>Hello from TinyJS</h1>;
+}
+```
+
+## Components inside your writing
+
+MDX combines Markdown with imported components. This is the same counter used on the home page, with its own live state:
+
+<div className="demo-box"><Counter /></div>
+
+> MDX is executable source. Compile trusted project content only. The compiler runs during preparation, never in the reader's browser.
+
+## Where next?
+
+Read about [routing and APIs](/docs/routing), or build a [Three.js game](/docs/games). Visit the [web lab](/lab) to inspect real responses.

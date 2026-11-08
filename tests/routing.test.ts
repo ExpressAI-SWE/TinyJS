@@ -1,3 +1,4 @@
+// These tests connect route paths, layouts, page rendering, and API handlers to their expected responses.
 import { expect, test } from 'bun:test';
 import { h } from 'preact';
 import type { ComponentChildren } from 'preact';

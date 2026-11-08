@@ -1,3 +1,4 @@
+// This browser component sends chat history to /api/chat and displays the streamed reply.
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { streamChat } from 'tinyjs/ai/client';
 
@@ -9,6 +10,7 @@ export default function Chatbot() {
   const [error, setError] = useState('');
   const active = useRef<AbortController>();
   useEffect(() => () => active.current?.abort(), []);
+  // Send the conversation to the server and add each streamed piece to the reply.
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (active.current || !input.trim()) return;

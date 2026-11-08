@@ -1,3 +1,4 @@
+// These browser tests check that the Three.js renderer and example game work together through their lifecycle.
 import { expect, test } from 'bun:test';
 import { chromium } from 'playwright-core';
 import { join } from 'node:path';

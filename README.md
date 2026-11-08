@@ -43,7 +43,9 @@ Pages receive `{ params, query }` and can export `metadata` with `title` and `de
 
 Ordinary internal anchors use client navigation. Add `data-reload` for full document navigation or `data-prefetch` for a hover hint.
 
-`tinyjs dev`, `tinyjs build`, and `tinyjs start` run from the app directory. An npm installation uses the same CLI on Node without Bun. `tinyjs build` writes the browser assets and server module to `.tinyjs/client` and `.tinyjs/server`. `tinyjs start` serves that output without loading Vite and reserves `/_tinyjs/` for generated assets. Run one build at a time per app and stop the production server before rebuilding in its directory.
+`tinyjs dev`, `tinyjs build`, `tinyjs serve`, and `tinyjs test` are the complete native CLI and run from the project directory. An npm installation uses the same CLI on Node without Bun. `tinyjs build` writes the browser assets and server module to `.tinyjs/client` and `.tinyjs/server`. `tinyjs serve` serves that output without loading Vite and reserves `/_tinyjs/` for generated assets. Run one build at a time per app and stop the production server before rebuilding in its directory.
+
+`tinyjs test` discovers JavaScript and TypeScript tests, reports passed/failed/skipped counts, and exits nonzero on failures or missing prerequisites. See [testing conventions and runtime prerequisites](docs/testing.md). Native `tinyjs start` is replaced by `tinyjs serve`; example `start` scripts build and then serve.
 
 The build emits hashed assets, lazy route chunks, a manifest, raw/gzip statistics, and configurable budget warnings. The shared-client 3,000-byte gzip target excludes lazy route and optional feature chunks. Added navigation functionality can exceed that target; inspect `.tinyjs/stats.json` for actual sizes. No comparative speed claim is made.
 

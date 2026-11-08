@@ -20,6 +20,7 @@ const clientEntry = normalizePath(fileURLToPath(new URL('./browser-entry.js', im
 const serverEntry = normalizePath(fileURLToPath(new URL('./server-entry.js', import.meta.url)));
 const aiEntry = normalizePath(fileURLToPath(new URL('./ai.js', import.meta.url)));
 
+// Configure Vite for Preact and keep server-only modules out of browser bundles.
 function config(root: string): InlineConfig {
   const apiDir = `${normalizePath(root)}/app/api/`;
   const jsx = { runtime: 'automatic', importSource: 'preact' } as const;
@@ -56,6 +57,7 @@ function config(root: string): InlineConfig {
   };
 }
 
+// Start the development server and recheck routes when app files are added or removed.
 export async function dev(root: string, host: string, port: number) {
   await loadConfig(root);
   await diagnoseRoutes(root);
@@ -101,11 +103,13 @@ export async function dev(root: string, host: string, port: number) {
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void vite.close(); });
 }
 
+// Missing configuration uses defaults; malformed configuration remains an error.
 async function loadConfig(root: string): Promise<TinyConfig> {
   try { return defineConfig(JSON.parse(await readFile(join(root, 'tinyjs.config.json'), 'utf8'))); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error; }
 }
 
+// Discover and validate page and API routes before serving or building the app.
 async function diagnoseRoutes(root: string) {
   const pages: string[] = [], apis: string[] = [];
   async function visit(directory: string, relative: string) {
@@ -122,6 +126,7 @@ async function diagnoseRoutes(root: string) {
   console.log(`TinyJS routes: ${pages.length} pages, ${apis.length} API handlers`);
 }
 
+// Build browser and server bundles, then publish metadata only after both builds succeed.
 export async function build(root: string) {
   const started = performance.now();
   const output = outputPaths(root);
@@ -162,6 +167,7 @@ export async function build(root: string) {
     entry: entry.fileName,
     styles: client.output.filter((file) => file.type === 'asset' && file.fileName.endsWith('.css')).map((file) => file.fileName),
   };
+  // Measure generated assets and optionally write gzip copies for the production server.
   const statistics = client.output.filter((file) => file.type === 'chunk' || /\.(css|svg|json)$/.test(file.fileName)).map((file) => {
     const source = file.type === 'chunk' ? file.code : file.source;
     const raw = Buffer.from(source);
@@ -173,6 +179,7 @@ export async function build(root: string) {
   }
   const pending = `${output.metadata}.tmp`;
 
+  // Follow shared entry imports to measure the JavaScript needed at startup.
   const files = new Set([entry.fileName]);
   let bytes = 0;
   for (const name of files) {
