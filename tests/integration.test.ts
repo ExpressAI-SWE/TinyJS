@@ -27,7 +27,13 @@ afterAll(async () => {
 
 async function fixture(name: string) {
   const cwd = join(temporary, name);
-  await cp(join(root, 'examples/basic/app'), join(cwd, 'app'), { recursive: true });
+  // Keep the shared-client budget independent of the growing playground.
+  await mkdir(join(cwd, 'app'), { recursive: true });
+  for (const path of ['about', 'api', 'counter.tsx']) {
+    await cp(join(root, 'examples/basic/app', path), join(cwd, 'app', path), { recursive: true });
+  }
+  await writeFile(join(cwd, 'app/page.tsx'), `import Counter from './counter';
+    export default function Home() { return <><h1>TinyJS</h1><Counter /></>; }`);
   await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
   await mkdir(join(cwd, 'node_modules'));
   await symlink(join(root, 'packages/tinyjs'), join(cwd, 'node_modules/tinyjs'), 'junction');
@@ -47,7 +53,10 @@ async function fixture(name: string) {
   await writeFile(join(cwd, 'app/api/fail/route.ts'), `export function GET() { throw new Error('${marker}'); }`);
   await writeFile(join(cwd, 'app/theme.css'), 'main { padding-left: 13px; }');
   const layout = join(cwd, 'app/layout.tsx');
-  await writeFile(layout, `import './theme.css';\n${await readFile(layout, 'utf8')}`);
+  await writeFile(layout, `import './theme.css'; import type { ComponentChildren } from 'preact';
+    export default function Layout({ children }: { children: ComponentChildren }) {
+      return <><nav aria-label="Main navigation"><a href="/">Home</a>{' · '}<a href="/about">About</a></nav><main>{children}</main></>;
+    }`);
   return cwd;
 }
 
@@ -131,7 +140,7 @@ async function checkApplication(url: string, command: 'dev' | 'serve', cwd: stri
       await page.goto(url);
       await page.getByRole('button', { name: 'Count: 0' }).waitFor();
       const source = join(cwd, 'app/page.tsx');
-      await writeFile(source, (await readFile(source, 'utf8')).replace('<h1>Small by design.<br />Big on possibility.</h1>', '<h1>Updated TinyJS</h1>'));
+      await writeFile(source, (await readFile(source, 'utf8')).replace('<h1>TinyJS</h1>', '<h1>Updated TinyJS</h1>'));
       await page.getByRole('heading', { name: 'Updated TinyJS' }).waitFor();
       await mkdir(join(cwd, 'app/added'));
       const discovered = page.waitForEvent('load');
