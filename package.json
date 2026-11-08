@@ -3,10 +3,13 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.4.4",
-  "workspaces": ["packages/*", "examples/*"],
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
   "scripts": {
     "compile": "tsc -p packages/tinyjs",
-    "typecheck": "tsc -p examples/basic",
+    "typecheck": "tsc -p examples/basic && tsc -p examples/ai-chatbot && tsc -p examples/infinite-terrain && tsc -p examples/three-scene && tsc -p examples/dynamic-routing && tsc -p examples/lazy-loading",
     "browser:install": "playwright-core install chromium",
     "test": "bun run compile && bun run typecheck && bun test",
     "dev": "bun run --cwd examples/basic dev",
@@ -15,8 +18,10 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/three": "^0.187.0",
     "playwright-core": "^1.58.0",
     "preact": "^10.28.0",
+    "three": "^0.187.0",
     "typescript": "~5.9.3"
   }
 }

@@ -44,12 +44,28 @@ export async function start(root: string, host: string, port: number) {
       return new Response('Not Found', { status: 404, headers: plainText });
     }
     try {
-      const content = await readFile(join(output.client, file));
-      return new Response(request.method === 'HEAD' ? null : content, {
+      let compressed = false;
+      let content: Buffer;
+      const acceptsGzip = (request.headers.get('accept-encoding') ?? '').split(',').some((entry) => {
+        const [encoding, ...parameters] = entry.trim().split(';');
+        return encoding === 'gzip' && !parameters.some((parameter) => /^\s*q\s*=\s*0(?:\.0*)?\s*$/.test(parameter));
+      });
+      try {
+        if (!acceptsGzip) throw Object.assign(new Error('No gzip requested'), { code: 'ENOENT' });
+        content = await readFile(join(output.client, file + '.gz'));
+        compressed = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        content = await readFile(join(output.client, file));
+      }
+      return new Response(request.method === 'HEAD' ? null : new Uint8Array(content), {
         headers: {
           'Content-Type': assetTypes.get(extname(file)) ?? 'application/octet-stream',
           'Content-Length': String(content.byteLength),
           'X-Content-Type-Options': 'nosniff',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          Vary: 'Accept-Encoding',
+          ...(compressed ? { 'Content-Encoding': 'gzip' } : {}),
         },
       });
     } catch (error) {
@@ -60,4 +76,5 @@ export async function start(root: string, host: string, port: number) {
   server.listen(port, host);
   await once(server, 'listening');
   printAddress(server);
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { server.close(); server.closeIdleConnections(); });
 }

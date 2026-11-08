@@ -1,0 +1,81 @@
+import { expect, test } from 'bun:test';
+import { spawn, execFile } from 'node:child_process';
+import { once } from 'node:events';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { createHash } from 'node:crypto';
+import { chromium } from 'playwright-core';
+const run = promisify(execFile);
+const root = join(import.meta.dir,'..');
+const bin = join(root,'packages/tinyjs/bin/tinyjs.js');
+
+test('Stage 2 production routing hydrates, navigates, cancels races and builds reproducibly', async () => {
+ const cwd=await mkdtemp(join(root,'.tinyjs-test-stage2-'));
+ let child: ReturnType<typeof spawn> | undefined;
+ let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+ try {
+  await cp(join(root,'examples/dynamic-routing/app'),join(cwd,'app'),{recursive:true});
+  await writeFile(join(cwd,'package.json'),'{"type":"module"}');
+  await writeFile(join(cwd,'tinyjs.config.json'),JSON.stringify({compress:true,sourcemap:'hidden'}));
+  await mkdir(join(cwd,'app/broken'),{recursive:true});
+  await writeFile(join(cwd,'app/broken/page.tsx'),`export default function Page(){ throw Error('private stack'); }`);
+  await writeFile(join(cwd,'app/broken/layout.tsx'),`export default function Layout(){ throw Error('private layout'); }`);
+  await writeFile(join(cwd,'app/error.tsx'),`export default function ErrorPage(){return <h1>Recovered route</h1>}`);
+  await writeFile(join(cwd,'app/broken/error.tsx'),`export default function ErrorPage(){return <h1>Nested fallback</h1>}`);
+  await writeFile(join(cwd,'app/users/loading.tsx'),`export default function Loading(){return <><p role='status'>Loading user</p><a href='/users/fast'>Fast</a></>}`);
+  await writeFile(join(cwd,'app/browser.tsx'),`const origin=window.location.origin; export default function Browser(){return <p>Browser mounted: {origin}</p>}`);
+  await writeFile(join(cwd,'app/page.tsx'),`import {useState} from 'preact/hooks'; import {lazyBrowser} from '../../packages/tinyjs/dist/client.js'; const Browser=lazyBrowser(()=>import('./browser'),<p>Browser fallback</p>); export default function Home(){const [bad,setBad]=useState(false); if(bad && typeof window!=='undefined') throw Error('client failure'); return <main><h1>Home</h1><Browser/><button onClick={()=>setBad(true)}>Throw</button><a href='/users/42?filter=active'>User</a><a href='/users/slow'>Slow</a><a href='/users/fast'>Fast</a><a href='/missing'>Missing</a><a href='/broken'>Broken</a></main>}`);
+  await run('node',[bin,'build'],{cwd,timeout:30000});
+  const assetDir=join(cwd,'.tinyjs/client/assets');
+  const first=(await readdir(assetDir)).sort();
+  const hashes = await Promise.all(first.map(async file => createHash('sha256').update(await readFile(join(assetDir,file))).digest('hex')));
+  const manifest=JSON.parse(await readFile(join(cwd,'.tinyjs/client/.vite/manifest.json'),'utf8'));
+  expect(Object.values(manifest).filter((v:any)=>v.isDynamicEntry).length).toBeGreaterThan(2);
+  expect(first.some(file=>file.endsWith('.gz'))).toBe(true);
+  await writeFile(join(assetDir,'stale.js'),'stale');
+  await run('node',[bin,'build'],{cwd,timeout:30000});
+  expect((await readdir(assetDir)).sort()).toEqual(first);
+  expect(await Promise.all(first.map(async file => createHash('sha256').update(await readFile(join(assetDir,file))).digest('hex')))).toEqual(hashes);
+  child=spawn('node',[bin,'start','--port','0'],{cwd,stdio:['ignore','pipe','pipe']});
+  let logs='';
+  const url=await new Promise<string>((resolve,reject)=>{
+   const timeout=setTimeout(()=>reject(Error(logs)),15000);
+   child!.once('error',reject);child!.once('exit',()=>{clearTimeout(timeout);reject(Error(logs));});
+   child!.stdout!.on('data',chunk=>{logs+=chunk;const found=/TinyJS listening on (http:\/\/127.0.0.1:\d+)/.exec(logs);if(found){clearTimeout(timeout);resolve(found[1]);}});
+   child!.stderr!.on('data',chunk=>{logs+=chunk;});
+  });
+  const js=first.find(file=>file.endsWith('.js'))!;
+  const asset=await fetch(url+'/_tinyjs/assets/'+js);
+  expect(await (await fetch(url)).text()).toContain('Browser fallback');
+  expect(asset.headers.get('cache-control')).toContain('immutable');
+  const compressed=await fetch(url+'/_tinyjs/assets/'+js,{headers:{'Accept-Encoding':'gzip'}});
+  expect(compressed.headers.get('content-encoding')).toBe('gzip');
+  expect(await compressed.text()).toBe(await asset.text());
+  browser=await chromium.launch({executablePath:process.env.TINYJS_CHROMIUM_PATH});
+  const page=await browser.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(url);await page.getByText('Browser mounted:',{exact:false}).waitFor();await page.evaluate(()=>{(window as any).survived=42;});
+  await page.getByRole('link',{name:'User',exact:true}).click();await page.getByRole('heading',{name:'User 42'}).waitFor();
+  expect(await page.evaluate(()=>(window as any).survived)).toBe(42);
+  expect(await page.title()).toBe('User profile');expect(await page.locator('p').textContent()).toBe('Filter: active');
+  await page.reload();await page.getByRole('heading',{name:'User 42'}).waitFor();
+  await page.getByRole('link',{name:'Home',exact:true}).click();await page.getByRole('heading',{name:'Home',exact:true}).waitFor();
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve});
+  let entered!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve});
+  await page.route('**/users/slow',async route=>{entered();await gate;await route.continue().catch(()=>{});});
+  await page.getByRole('link',{name:'Slow',exact:true}).click();await started;
+  await page.getByRole('status').filter({hasText:'Loading user'}).waitFor();
+  await page.getByRole('link',{name:'Fast',exact:true}).click();await page.getByRole('heading',{name:'User fast'}).waitFor();release();
+  expect(page.url()).toEndWith('/users/fast');
+  await page.goBack();await page.getByRole('heading',{name:'Home',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Missing',exact:true}).click();await page.getByRole('heading',{name:'Page not found'}).waitFor();
+  await page.goto(url+'/broken');await page.getByRole('heading',{name:'Recovered route'}).waitFor();
+  expect(await page.locator('section').count()).toBe(0);
+  await page.goto(url);await page.getByRole('button',{name:'Throw'}).click();await page.getByRole('heading',{name:'Recovered route'}).waitFor();
+  expect(errors).toEqual([]);
+ } finally {
+  await browser?.close();
+  if(child?.pid && child.exitCode===null){const closed=once(child,'close');child.kill();await closed;}
+  await rm(cwd,{recursive:true,force:true});
+ }
+},60000);
