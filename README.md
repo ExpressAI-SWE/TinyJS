@@ -47,7 +47,7 @@ Ordinary internal anchors use client navigation. Add `data-reload` for full docu
 
 `tinyjs test` discovers JavaScript and TypeScript tests, reports passed/failed/skipped counts, and exits nonzero on failures or missing prerequisites. See [testing conventions and runtime prerequisites](docs/testing.md). Native `tinyjs start` is replaced by `tinyjs serve`; example `start` scripts build and then serve.
 
-The build emits hashed assets, lazy route chunks, a manifest, raw/gzip statistics, and configurable budget warnings. The shared-client 3,000-byte gzip target excludes lazy route and optional feature chunks. Added navigation functionality can exceed that target; inspect `.tinyjs/stats.json` for actual sizes. No comparative speed claim is made.
+The build emits hashed assets, lazy route chunks, a manifest, raw/gzip statistics, and configurable budget warnings. The shared-client 3,000-byte gzip target excludes lazy route and optional feature chunks and remains unmet. Production omits support code for absent loading/error files and uses gzip level 9 for statistics and optional compressed assets. See [measured sizes](docs/performance.md) and `.tinyjs/stats.json` for actual output. No comparative speed claim is made.
 
 ## Optional modules and examples
 

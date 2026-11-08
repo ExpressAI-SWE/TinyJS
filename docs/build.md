@@ -12,9 +12,9 @@ Run `tinyjs build` in an application root. Vite/Rolldown handles dependency anal
 
 CSS is emitted as a shared stylesheet. Keep expensive dependencies inside lazy modules to avoid increasing initial JavaScript. AI and 3D are separate package entry points.
 
-The printed shared gzip size includes the entry and static imports, excluding lazy route chunks. The 3,000-byte target is an optimization goal. Navigation/error handling can exceed it; optional feature chunks are measured separately. Configure thresholds and opt-in failures in [configuration](configuration.md).
+The printed shared gzip size includes the entry and static imports, excluding lazy route chunks. Production builds omit loading and error-boundary code only when the app has no corresponding files; apps using those files retain their support. The 3,000-byte target is an optimization goal, not an achieved size. See [measured production sizes](performance.md) for shared and complete JavaScript output. Configure thresholds and opt-in failures in [configuration](configuration.md).
 
-Client source maps are off by default. `compress: true` writes smaller gzip siblings for supported assets. Production negotiates gzip with `Vary: Accept-Encoding`; hashed assets receive immutable one-year caching. HTML does not receive that asset policy. Deploy server, client, and metadata from one build.
+Client source maps are off by default. Sizes and gzip siblings use gzip level 9, computed once per asset. `compress: true` writes smaller gzip siblings for supported assets. Production negotiates gzip with `Vary: Accept-Encoding`; hashed assets receive immutable one-year caching. Without compression enabled, gzip statistics describe potential compressed sizes rather than served bytes. HTML does not receive that asset policy. Deploy server, client, and metadata from one build.
 
 Vite empties output directories. TinyJS removes completion metadata before building and publishes it only after successful client/server builds and budget checks. Resolve failures and rebuild before startup. Run one build at a time and stop the app's server before rebuilding into its directory.
 

@@ -2,10 +2,11 @@
 import { expect, test } from 'bun:test';
 import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 const run = promisify(execFile);
 const root = join(import.meta.dir,'..');
@@ -25,6 +26,8 @@ test('Stage 2 production routing hydrates, navigates, cancels races and builds r
   await writeFile(join(cwd,'app/error.tsx'),`export default function ErrorPage(){return <h1>Recovered route</h1>}`);
   await writeFile(join(cwd,'app/broken/error.tsx'),`export default function ErrorPage(){return <h1>Nested fallback</h1>}`);
   await writeFile(join(cwd,'app/users/loading.tsx'),`export default function Loading(){return <><p role='status'>Loading user</p><a href='/users/fast'>Fast</a></>}`);
+  await rename(join(cwd,'app/users'),join(cwd,'linked-users'));
+  await symlink(join(cwd,'linked-users'),join(cwd,'app/users'),process.platform==='win32'?'junction':'dir');
   await writeFile(join(cwd,'app/browser.tsx'),`const origin=window.location.origin; export default function Browser(){return <p>Browser mounted: {origin}</p>}`);
   await writeFile(join(cwd,'app/page.tsx'),`import {useState} from 'preact/hooks'; import {lazyBrowser} from '../../packages/tinyjs/dist/client.js'; const Browser=lazyBrowser(()=>import('./browser'),<p>Browser fallback</p>); export default function Home(){const [bad,setBad]=useState(false); if(bad && typeof window!=='undefined') throw Error('client failure'); return <main><h1>Home</h1><Browser/><button onClick={()=>setBad(true)}>Throw</button><a href='/users/42?filter=active'>User</a><a href='/users/slow'>Slow</a><a href='/users/fast'>Fast</a><a href='/missing'>Missing</a><a href='/broken'>Broken</a></main>}`);
   await run('node',[bin,'build'],{cwd,timeout:30000});
@@ -34,6 +37,12 @@ test('Stage 2 production routing hydrates, navigates, cancels races and builds r
   const manifest=JSON.parse(await readFile(join(cwd,'.tinyjs/client/.vite/manifest.json'),'utf8'));
   expect(Object.values(manifest).filter((v:any)=>v.isDynamicEntry).length).toBeGreaterThan(2);
   expect(first.some(file=>file.endsWith('.gz'))).toBe(true);
+  const stats=JSON.parse(await readFile(join(cwd,'.tinyjs/stats.json'),'utf8'));
+  for (const file of first.filter(file=>file.endsWith('.gz'))) {
+   const compressed=await readFile(join(assetDir,file));
+   expect(gunzipSync(compressed)).toEqual(await readFile(join(assetDir,file.slice(0,-3))));
+   expect(compressed.byteLength).toBe(stats.assets.find((asset:any)=>asset.file==='assets/'+file.slice(0,-3)).gzip);
+  }
   await writeFile(join(assetDir,'stale.js'),'stale');
   await run('node',[bin,'build'],{cwd,timeout:30000});
   expect((await readdir(assetDir)).sort()).toEqual(first);
