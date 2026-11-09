@@ -66,7 +66,8 @@ function projectFiles(config: ProjectConfig, frameworkSpec: string): Record<stri
   const modules = config.styling === 'modules';
   const tailwind = config.styling === 'tailwind';
   const styleFile = modules ? 'theme.module.css' : 'theme.css';
-  files[`${app}/${styleFile}`] = tailwind ? "@import 'tailwindcss';\n" : css;
+  const tailwindImport = config.formatter === 'biome' ? '@import "tailwindcss";' : "@import 'tailwindcss';";
+  files[`${app}/${styleFile}`] = tailwind ? tailwindImport + '\n' : css;
   if (modules && config.typescript) {
     files[`${app}/styles.d.ts`] = "declare module '*.module.css' {\n  const classes: Record<string, string>;\n  export default classes;\n}\n";
   }

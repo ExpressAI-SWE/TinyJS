@@ -38,6 +38,8 @@ test('generates a root JavaScript full-stack app with one Biome installation', a
     equal((await readFile(join(root, 'playwright.config.js'), 'utf8')).includes('npm run dev -- --port 4173'), true);
     equal((await readFile(join(root, '.github/workflows/ci.yml'), 'utf8')).includes('npm run test'), true);
     await rejects(readFile(join(root, 'tests/site.test.js')), { code: 'ENOENT' });
+    const tailwind = await generateProject({ ...defaults, name: 'biome-tailwind', formatter: 'biome' }, parent);
+    equal(await readFile(join(tailwind, 'src/app/theme.css'), 'utf8'), '@import "tailwindcss";\n');
   } finally {
     await rm(parent, { recursive: true, force: true });
   }

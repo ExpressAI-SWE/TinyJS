@@ -38,6 +38,8 @@ bun packages/create-tinyjs-fullstack/src/cli.ts my-api --yes --template fullstac
 
 The initializer creates a new project directory and rejects existing destinations. If dependency installation fails, enter the generated directory and retry with the selected manager's `install` command. Use `pnpm install --ignore-workspace` if a parent pnpm workspace intercepts the install. Local framework archives work for local setup and require a registry dependency before using the generated GitHub Actions workflow. If Playwright reports a missing browser, run the browser installation command in the generated README.
 
+Oxlint and Oxfmt honor Git ignore rules. If setup runs inside an ignored directory in a parent repository, create the app outside that directory or initialize Git in the generated project.
+
 ## Generated project
 
 | Path | Purpose |
