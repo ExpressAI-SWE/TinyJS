@@ -87,7 +87,10 @@ export async function dev(root: string, host: string, port: number) {
         const changed = (file: string) => {
           if (!normalizePath(file).startsWith(`${normalizePath(root)}/${appDir}/`)) return;
           clearTimeout(timer);
-          timer = setTimeout(() => { void diagnoseRoutes(root, appDir).then(() => server.ws.send({ type: 'full-reload' }), error => server.config.logger.error(String(error))); }, 50);
+          // Vite reloads changed route globs. Sending a second reload can interrupt navigation.
+          timer = setTimeout(() => {
+            void diagnoseRoutes(root, appDir).catch(error => server.config.logger.error(String(error)));
+          }, 50);
         };
         server.watcher.on('add', changed).on('unlink', changed);
         server.httpServer?.once('close', () => { clearTimeout(timer); server.watcher.off('add', changed).off('unlink', changed); });
