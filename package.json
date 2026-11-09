@@ -8,7 +8,7 @@
     "examples/*"
   ],
   "scripts": {
-    "compile": "tsc -p packages/tinyjs",
+    "compile": "tsc -p packages/tinyjs && tsc -p packages/create-tinyjs-fullstack",
     "typecheck": "tsc -p examples/basic && tsc -p examples/ai-chatbot && tsc -p examples/infinite-terrain && tsc -p examples/three-scene && tsc -p examples/dynamic-routing && tsc -p examples/lazy-loading",
     "browser:install": "playwright-core install chromium",
     "test": "bun run compile && bun run typecheck && bun packages/tinyjs/bin/tinyjs.js test",
