@@ -23,3 +23,8 @@ Sizes must be positive safe integers. Unknown keys and invalid types are rejecte
 TinyJS owns its Vite configuration. It does not load application `vite.config.*` or `tinyjs.config.ts` files. `tinyjs/config` exports `TinyConfig` and `defineConfig(value)` for typed tooling validation; exporting a value from a TypeScript file does not auto-load it.
 
 Hidden maps omit the source-map comment but do not make map files private; exclude them from public hosting when needed. Set server environment variables through the runtime or deployment platform. Never put credentials in client `VITE_` variables or this JSON file.
+
+For apps under `src/app/`, set `"appDir": "src/app"`. The default is `"app"`.
+Set `"importAlias": "@/*"` to resolve imports from the application source root.
+For example, `@/app/site` resolves to `src/app/site` in the `src/` layout.
+Add the matching `compilerOptions.paths` mapping in `tsconfig.json` for editor and test-runner resolution. The initializer writes both settings.

@@ -1,12 +1,21 @@
 import { parseArgs } from 'node:util';
 
-const help = 'Usage: tinyjs <dev | build | serve | test> [--host <host>] [--port <port>]';
+const help = `Usage: tinyjs <dev | build | serve | test>
+  dev, serve   [--host <host>] [--port <port>]
+  test         [--unit] [--e2e] [--lint] [--types] [--format] [--watch | --fix]`;
+
+const checks = ['unit', 'e2e', 'lint', 'types', 'format'] as const;
 
 // Parse the command once, then load only the implementation needed for that command.
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { help: { type: 'boolean', short: 'h' }, host: { type: 'string' }, port: { type: 'string' } },
+    options: {
+      help: { type: 'boolean', short: 'h' }, host: { type: 'string' }, port: { type: 'string' },
+      unit: { type: 'boolean' }, e2e: { type: 'boolean' }, lint: { type: 'boolean' },
+      types: { type: 'boolean' }, format: { type: 'boolean' }, watch: { type: 'boolean' },
+      fix: { type: 'boolean' },
+    },
   });
   if (values.help) {
     console.log(help);
@@ -16,12 +25,14 @@ async function main() {
   if (positionals.length !== 1 || !['dev', 'build', 'serve', 'test'].includes(command)) throw new Error(help);
 
   const root = process.cwd();
+  const selected = checks.filter((check) => values[check]);
   if (command === 'test') {
     if (values.host !== undefined || values.port !== undefined) throw new Error('Host and port apply to dev and serve.');
-    const { runTests } = await import('./testing.js');
-    process.exitCode = await runTests(root);
+    const { validateProject } = await import('./validation.js');
+    process.exitCode = await validateProject(root, selected, values.watch, values.fix);
     return;
   }
+  if (selected.length || values.watch || values.fix) throw new Error('Validation options apply to test.');
   process.env.NODE_ENV = command === 'dev' ? 'development' : 'production';
   if (command === 'build') {
     if (values.host !== undefined || values.port !== undefined) throw new Error('Host and port apply to dev and serve.');

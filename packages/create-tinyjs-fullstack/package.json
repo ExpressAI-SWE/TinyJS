@@ -1,0 +1,17 @@
+{
+  "name": "create-tinyjs-fullstack",
+  "version": "0.1.0",
+  "description": "Create a TinyJS web application",
+  "type": "module",
+  "bin": "./dist/cli.js",
+  "files": ["dist"],
+  "engines": { "node": "^20.19.0 || >=22.12.0" },
+  "scripts": { "prepack": "tsc -p tsconfig.json" },
+  "dependencies": { "@clack/prompts": "^1.8.1" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ExpressAI-SWE/TinyJS.git",
+    "directory": "packages/create-tinyjs-fullstack"
+  },
+  "license": "MIT"
+}

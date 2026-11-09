@@ -7,9 +7,9 @@ import { pathToFileURL } from 'node:url';
 
 // Find supported test files while skipping generated and dependency directories.
 const testFile = /(?:\.test|_test|\.spec|_spec)\.(?:[cm]?[jt]s|[jt]sx)$/;
-const excluded = new Set(['node_modules', 'dist', 'build', 'coverage']);
+export const excluded = new Set(['node_modules', 'dist', 'build', 'coverage']);
 
-async function discover(directory: string): Promise<string[]> {
+export async function discover(directory: string): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.name.startsWith('.') || excluded.has(entry.name)) continue;
@@ -21,37 +21,28 @@ async function discover(directory: string): Promise<string[]> {
 }
 
 // Run discovered tests with Bun or Node and return an exit code to the CLI.
-export async function runTests(root: string): Promise<number> {
-  const files = await discover(root);
+export async function runTests(root: string, files: string[], watch: boolean, configured: boolean): Promise<number> {
   if (!files.length) throw new Error('No tests found. Add a *.test.ts or *.test.js file (see docs/testing.md).');
   const bun = Boolean(process.versions.bun);
   const args = bun ? ['test', ...files] : ['--test', '--test-reporter=spec'];
   // Node needs the project-local tsx loader to run TypeScript and JSX tests.
-  if (!bun && files.some(file => /\.(?:[cm]?ts|[jt]sx)$/.test(file))) {
+  if (!bun && (configured || files.some(file => /\.(?:[cm]?ts|[jt]sx)$/.test(file)))) {
     try {
       const require = createRequire(join(resolve(root), 'package.json'));
       args.push('--import', pathToFileURL(require.resolve('tsx')).href);
     } catch {
-      throw new Error('TypeScript tests on Node require tsx. Install it as a project devDependency: npm install --save-dev tsx. Or run the TinyJS CLI with Bun.');
+      throw new Error(configured
+        ? 'Configured TinyJS tests on Node require tsx. Install it as a project devDependency or run TinyJS with Bun.'
+        : 'TypeScript tests on Node require tsx. Install it as a project devDependency: npm install --save-dev tsx. Or run the TinyJS CLI with Bun.');
     }
   }
+  if (watch) args.push('--watch');
   if (!bun) args.push(...files);
-  const reportDirectory = bun ? await mkdtemp(join(tmpdir(), 'tinyjs-test-')) : undefined;
+  const reportDirectory = bun && !watch ? await mkdtemp(join(tmpdir(), 'tinyjs-test-')) : undefined;
   const report = reportDirectory && join(reportDirectory, 'results.xml');
   if (report) args.push('--reporter=junit', `--reporter-outfile=${report}`);
   try {
-    const code = await new Promise<number>((resolveExit, reject) => {
-      const child = spawn(process.execPath, args, {
-        cwd: root,
-        stdio: 'inherit',
-        env: { ...process.env, NODE_ENV: 'test' },
-      });
-      child.once('error', reject);
-      child.once('exit', (code, signal) => {
-        if (signal) console.error(`Test runner terminated by ${signal}.`);
-        resolveExit(code ?? 1);
-      });
-    });
+    const code = await runCheck(root, process.execPath, args);
     // Bun writes a JUnit report; use its totals to print a concise summary.
     if (report) {
       const xml = await readFile(report, 'utf8').catch((error: NodeJS.ErrnoException) => {
@@ -78,4 +69,19 @@ export async function runTests(root: string): Promise<number> {
     // Remove the temporary report even if the runner or summary fails.
     if (reportDirectory) await rm(reportDirectory, { recursive: true, force: true });
   }
+}
+
+export function runCheck(root: string, executable: string, args: string[]): Promise<number> {
+  return new Promise((resolveExit, reject) => {
+    const child = spawn(executable, args, {
+      cwd: root,
+      stdio: 'inherit',
+      env: { ...process.env, NODE_ENV: 'test', TINYJS_VALIDATING_ROOT: root },
+    });
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      if (signal) console.error(`Validation process terminated by ${signal}.`);
+      resolveExit(code ?? 1);
+    });
+  });
 }

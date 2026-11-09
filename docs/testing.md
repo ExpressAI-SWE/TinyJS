@@ -45,3 +45,9 @@ then invokes `tinyjs test` with Bun to preserve the Stage 2 suite. Its browser
 tests remain mandatory. Testing code is loaded only by the CLI's `test` branch;
 `tsx` and browser tooling are development dependencies and are not imported by
 the production client runtime.
+
+## Configured validation
+
+A generated project uses `tinyjs.test.json` to select tools for unit tests, browser tests, linting, type checks, and formatting. The `test` script calls `tinyjs test`, which runs every configured check, reports each result, and exits nonzero if a check fails or its tool is missing.
+
+Use `tinyjs test --unit`, `--e2e`, `--lint`, `--types`, or `--format` to select checks. Combine flags to run several. Formatting runs in check mode by default. Pass `--fix` to apply supported lint and formatting fixes. Use `--watch` to watch unit tests. Playwright artifacts from validation are temporary. Projects without `tinyjs.test.json` retain the existing test runner and discovery behavior.

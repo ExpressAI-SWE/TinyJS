@@ -2,6 +2,10 @@
 
 TinyJS is a small full-stack TypeScript framework using Preact for SSR and hydration, and Vite 8 with Rolldown and Oxc for builds and development. Stage 2 adds dynamic routing, client navigation, optional AI and Three.js modules, resource loading, and production diagnostics.
 
+## Scaffold a web application
+
+See the [interactive project initializer](docs/scaffolding.md) for local setup, starter templates, customization flags, and unified validation. TinyJS currently scaffolds Web applications only. Desktop and Mobile support are planned but not implemented.
+
 ## Run the example
 
 Use Bun 1.4.4 and a Vite 8-compatible Node.js version (20.19+ in the Node 20 line, or 22.12+).
