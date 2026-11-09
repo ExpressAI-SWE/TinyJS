@@ -1,7 +1,7 @@
 // These tests run the TinyJS test command against temporary projects and check its output and exit status.
 import { expect, test } from 'bun:test';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
@@ -84,3 +84,45 @@ test('Node runs JavaScript without a loader and reports missing TypeScript prere
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test('configured validation continues after a failure and supports selecting checks', () => fixture(async cwd => {
+  await writeFile(join(cwd, 'tinyjs.test.json'), JSON.stringify({ lint: 'oxlint', types: 'tsc' }));
+  await writeFile(join(cwd, 'tsconfig.json'), JSON.stringify({ compilerOptions: { types: [] }, files: ['app.ts'] }));
+  await writeFile(join(cwd, 'app.ts'), 'const count: number = "invalid";');
+  try {
+    await exec('node', [bin, 'test'], { cwd });
+    throw Error('Expected invalid project to fail');
+  } catch (error: any) {
+    expect(error.code).toBe(1);
+    expect(error.stderr).toContain('lint: failed');
+    expect(error.stderr).toContain('types: failed');
+    expect(error.stdout).toContain('Validation: 0 passed, 2 failed, 3 skipped.');
+  }
+  await writeFile(join(cwd, 'app.ts'), 'const count: number = 1;');
+  const result = await exec('node', [bin, 'test', '--types'], { cwd });
+  expect(result.stdout).toContain('lint: skipped (not selected)');
+  expect(result.stdout).toContain('types: passed');
+  expect(result.stdout).toContain('unit: skipped (disabled)');
+  expect(result.stdout).toContain('Validation: 1 passed, 0 failed, 4 skipped.');
+  await writeFile(join(cwd, 'tinyjs.test.json'), JSON.stringify({ unit: 'tinyjs test' }));
+  await expect(exec('node', [bin, 'test'], { cwd })).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('Invalid unit check') });
+  await expect(exec('node', [bin, 'test', '--watch', '--format'], { cwd })).rejects.toMatchObject({ code: 1 });
+}), 60000);
+
+test('configured formatter writes only with --fix', () => fixture(async cwd => {
+  const formatter = join(cwd, 'node_modules', 'prettier');
+  await mkdir(formatter, { recursive: true });
+  await writeFile(join(formatter, 'package.json'), JSON.stringify({ bin: { prettier: './cli.cjs' } }));
+  await writeFile(join(formatter, 'cli.cjs'), `
+    const { readFileSync, writeFileSync } = require('node:fs');
+    if (process.argv.includes('--write')) writeFileSync('input.js', 'formatted');
+    else if (!process.argv.includes('--check') || readFileSync('input.js', 'utf8') !== 'formatted') process.exitCode = 1;
+  `);
+  await writeFile(join(cwd, 'tinyjs.test.json'), JSON.stringify({ format: 'prettier' }));
+  await writeFile(join(cwd, 'input.js'), 'unformatted');
+  await expect(exec('node', [bin, 'test'], { cwd })).rejects.toMatchObject({ code: 1 });
+  expect(await readFile(join(cwd, 'input.js'), 'utf8')).toBe('unformatted');
+  await exec('node', [bin, 'test', '--format', '--fix'], { cwd });
+  expect(await readFile(join(cwd, 'input.js'), 'utf8')).toBe('formatted');
+  await exec('node', [bin, 'test'], { cwd });
+}), 30000);
