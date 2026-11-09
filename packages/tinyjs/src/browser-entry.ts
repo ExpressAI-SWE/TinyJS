@@ -1,3 +1,4 @@
+import { normalizeAppFiles } from './route-tree.js';
 import { Component, h, hydrate, render } from 'preact';
 import type { ComponentChild, ComponentType } from 'preact';
 import { layoutAncestry, pageTree } from './route-tree.js';
@@ -6,9 +7,9 @@ import { matchRoute, requestPath } from './routing.js';
 import { prefersReducedData } from './loading.js';
 
 // Vite discovers the browser-loadable app files; the server provides the initial page and props.
-const pages = import.meta.glob<ComponentType<PageProps>>(['/app/**/page.tsx', '/app/**/error.tsx', '/app/not-found.tsx', '!/app/api/**'], { import: 'default' });
-const layouts = import.meta.glob<Layout>(['/app/**/layout.tsx', '!/app/api/**'], { import: 'default' });
-const loading = import.meta.glob<ComponentType<PageProps>>('/app/**/loading.tsx', { import: 'default' });
+const pages = normalizeAppFiles(import.meta.glob<ComponentType<PageProps>>(['/__tinyjs_app__/**/page.{tsx,jsx}', '/__tinyjs_app__/**/error.{tsx,jsx}', '/__tinyjs_app__/not-found.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { import: 'default' }));
+const layouts = normalizeAppFiles(import.meta.glob<Layout>(['/__tinyjs_app__/**/layout.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { import: 'default' }));
+const loading = normalizeAppFiles(import.meta.glob<ComponentType<PageProps>>(['/__tinyjs_app__/**/loading.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { import: 'default' }));
 const root = document.getElementById('tinyjs-root');
 let generation = 0;
 let pending: AbortController | undefined;

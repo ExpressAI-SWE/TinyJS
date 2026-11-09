@@ -18,6 +18,14 @@ export function queryProps(search: URLSearchParams): PageProps['query'] {
   return result;
 }
 
+// Keep route IDs independent of the project's layout and language.
+export function normalizeAppFiles<T>(files: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(files).map(([file, value]) => [
+    file.replace(/^\/src\/app\//, '/app/').replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts'),
+    value,
+  ]));
+}
+
 // Find the layouts between the app root and a page, from outermost to innermost.
 export function layoutAncestry(page: string) {
   const directories = page.split('/').slice(1, -1);

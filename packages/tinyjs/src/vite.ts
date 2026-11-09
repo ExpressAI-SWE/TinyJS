@@ -21,8 +21,9 @@ const serverEntry = normalizePath(fileURLToPath(new URL('./server-entry.js', imp
 const aiEntry = normalizePath(fileURLToPath(new URL('./ai.js', import.meta.url)));
 
 // Configure Vite for Preact and keep server-only modules out of browser bundles.
-function config(root: string): InlineConfig {
-  const apiDir = `${normalizePath(root)}/app/api/`;
+function config(root: string, settings: TinyConfig): InlineConfig {
+  const appDir = settings.appDir ?? 'app';
+  const apiDir = `${normalizePath(root)}/${appDir}/api/`;
   const jsx = { runtime: 'automatic', importSource: 'preact' } as const;
   return {
     root,
@@ -30,9 +31,14 @@ function config(root: string): InlineConfig {
     appType: 'custom',
     publicDir: false,
     oxc: { jsx },
-    resolve: { dedupe: ['preact'] },
+    resolve: {
+      dedupe: ['preact'],
+      alias: settings.importAlias ? {
+        [settings.importAlias.slice(0, -2)]: normalizePath(join(root, appDir, '..')),
+      } : undefined,
+    },
     optimizeDeps: {
-      entries: ['app/**/*.tsx', '!app/api/**'],
+      entries: [`${appDir}/**/*.{tsx,jsx}`, `!${appDir}/api/**`],
       include: ['preact'],
       rolldownOptions: { transform: { jsx } },
     },
@@ -40,18 +46,20 @@ function config(root: string): InlineConfig {
       name: 'tinyjs-entries',
       enforce: 'pre',
       resolveId(id) {
-        if (this.environment.config.consumer === 'client' && id === 'tinyjs/ai') this.error('Server module tinyjs/ai cannot be imported by a TinyJS page or layout.');
+        if (this.environment.config.consumer === 'client' && (id === 'tinyjs/ai' || id === 'tinyjs-fullstack/ai')) this.error('Server module tinyjs/ai cannot be imported by a TinyJS page or layout.');
         if (this.environment.config.consumer === 'client' && (isBuiltin(id) || id === 'bun' || id.startsWith('bun:'))) {
           this.error(`Server module ${id} cannot be imported by a TinyJS page or layout.`);
         }
         if (id === clientId) return clientEntry;
         if (id === serverId && this.environment.config.consumer === 'server') return serverEntry;
       },
-      transform(_code, id) {
+      transform(code, id) {
         const file = id.split('?')[0];
         if (this.environment.config.consumer === 'client' && (file.startsWith(apiDir) || file === serverEntry || file === aiEntry || file === aiEntry.replace(/\.js$/, '.ts') || /\.server\.[cm]?[jt]sx?$/.test(file))) {
           this.error(`Server module ${file} cannot be imported by a TinyJS page or layout.`);
         }
+        // Vite needs literal glob paths, so substitute the selected root before it expands them.
+        if (file === clientEntry || file === serverEntry) return code.replaceAll('/__tinyjs_app__/', `/${appDir}/`);
       },
     }],
   };
@@ -59,9 +67,10 @@ function config(root: string): InlineConfig {
 
 // Start the development server and recheck routes when app files are added or removed.
 export async function dev(root: string, host: string, port: number) {
-  await loadConfig(root);
-  await diagnoseRoutes(root);
-  const options = config(root);
+  const settings = await loadConfig(root);
+  const appDir = settings.appDir ?? 'app';
+  await diagnoseRoutes(root, appDir);
+  const options = config(root, settings);
   const vite = await createServer({
     ...options,
     server: {
@@ -76,9 +85,9 @@ export async function dev(root: string, host: string, port: number) {
       configureServer(server) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const changed = (file: string) => {
-          if (!normalizePath(file).startsWith(`${normalizePath(root)}/app/`)) return;
+          if (!normalizePath(file).startsWith(`${normalizePath(root)}/${appDir}/`)) return;
           clearTimeout(timer);
-          timer = setTimeout(() => { void diagnoseRoutes(root).then(() => server.ws.send({ type: 'full-reload' }), error => server.config.logger.error(String(error))); }, 50);
+          timer = setTimeout(() => { void diagnoseRoutes(root, appDir).then(() => server.ws.send({ type: 'full-reload' }), error => server.config.logger.error(String(error))); }, 50);
         };
         server.watcher.on('add', changed).on('unlink', changed);
         server.httpServer?.once('close', () => { clearTimeout(timer); server.watcher.off('add', changed).off('unlink', changed); });
@@ -110,24 +119,24 @@ async function loadConfig(root: string): Promise<TinyConfig> {
 }
 
 // Discover and validate page and API routes before serving or building the app.
-async function diagnoseRoutes(root: string) {
+async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appDir']>) {
   const pages: string[] = [], apis: string[] = [];
   let loading = false, errors = false;
   async function visit(directory: string, relative: string) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = `${relative}/${entry.name}`;
       if (entry.isDirectory()) await visit(join(directory, entry.name), path);
-      else if (entry.name === 'page.tsx' && !path.startsWith('/app/api/')) pages.push(path);
-      else if (entry.name === 'route.ts' && path.startsWith('/app/api/')) apis.push(path);
+      else if (/^page\.[jt]sx$/.test(entry.name) && !path.startsWith('/app/api/')) pages.push(path.replace(/\.jsx$/, '.tsx'));
+      else if (/^route\.[jt]s$/.test(entry.name) && path.startsWith('/app/api/')) apis.push(path.replace(/\.js$/, '.ts'));
       if (!path.startsWith('/app/api/')) {
         // Vite follows symlinks; retain support when this scan cannot inspect their targets.
-        loading ||= entry.name === 'loading.tsx' || entry.isSymbolicLink();
-        errors ||= entry.name === 'error.tsx' || entry.isSymbolicLink();
+        loading ||= /^loading\.[jt]sx$/.test(entry.name) || entry.isSymbolicLink();
+        errors ||= /^error\.[jt]sx$/.test(entry.name) || entry.isSymbolicLink();
       }
     }
   }
-  try { await visit(join(root, 'app'), '/app'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('TinyJS needs an app directory containing page.tsx.'); throw error; }
+  try { await visit(join(root, appDir), '/app'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`TinyJS needs a ${appDir} directory containing page.tsx or page.jsx.`); throw error; }
   validateRoutes(pages, '/page.tsx'); validateRoutes(apis, '/route.ts');
   console.log(`TinyJS routes: ${pages.length} pages, ${apis.length} API handlers`);
   return { loading, errors };
@@ -140,8 +149,8 @@ export async function build(root: string) {
   await mkdir(output.dir, { recursive: true });
   await rm(output.metadata, { force: true });
   const settings = await loadConfig(root);
-  const routes = await diagnoseRoutes(root);
-  const options = config(root);
+  const routes = await diagnoseRoutes(root, settings.appDir ?? 'app');
+  const options = config(root, settings);
   const client = await viteBuild({
     ...options,
     define: {

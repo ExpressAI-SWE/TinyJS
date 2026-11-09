@@ -200,3 +200,41 @@ test('enforces configured gzip budgets without publishing a completed build', as
   await expect(readFile(join(cwd, '.tinyjs/build.json'))).rejects.toThrow();
   expect(JSON.parse(await readFile(join(cwd, '.tinyjs/stats.json'), 'utf8')).sharedGzip).toBeGreaterThan(1);
 }, 30_000);
+
+test('src JavaScript routes build with aliases and hydrate without exposing API source', async () => {
+  const cwd = join(temporary, 'src JavaScript');
+  await mkdir(join(cwd, 'src/app/api/hello'), { recursive: true });
+  await writeFile(join(cwd, 'package.json'), '{"type":"module"}');
+  await writeFile(join(cwd, 'tinyjs.config.json'), '{"appDir":"src/app","importAlias":"@site/*"}');
+  await writeFile(join(cwd, 'src/title.js'), 'export const title = "JavaScript starter";');
+  await writeFile(join(cwd, 'src/app/page.jsx'), `
+    import { useState } from 'preact/hooks';
+    import { title } from '@site/title';
+    export default function Home() {
+      const [count, setCount] = useState(0);
+      return <><h1>{title}</h1><button onClick={() => setCount(count + 1)}>Count: {count}</button></>;
+    }
+  `);
+  await writeFile(join(cwd, 'src/app/api/hello/route.js'), 'export const GET = () => Response.json({ ok: true });');
+  await run('node', [bin, 'build'], { cwd });
+
+  for (const command of ['dev', 'serve'] as const) {
+    await withServer('node', command, cwd, async (url) => {
+      expect(await (await fetch(url)).text()).toContain('<h1>JavaScript starter</h1>');
+      expect(await (await fetch(url + '/api/hello')).json()).toEqual({ ok: true });
+      expect((await fetch(url + '/src/app/api/hello/route.js')).ok).toBe(false);
+      const page = await browser.newPage();
+      try {
+        await page.goto(url);
+        await page.evaluate(async () => {
+          const entry = [...document.scripts].find((script) => script.type === 'module' && !script.src.endsWith('/@vite/client'))!;
+          await import(entry.src);
+        });
+        await page.getByRole('button', { name: 'Count: 0' }).click();
+        await page.getByRole('button', { name: 'Count: 1' }).waitFor();
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}, 30_000);
