@@ -1,5 +1,6 @@
 // Build settings accepted by TinyJS. defineConfig checks them before Vite uses them.
 export interface TinyConfig {
+  rootApiRoutes?: boolean;
   appDir?: 'app' | 'src/app';
   importAlias?: string;
   sourcemap?: boolean | 'hidden';
@@ -9,7 +10,8 @@ export interface TinyConfig {
 export function defineConfig(value: TinyConfig): TinyConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('TinyJS config must be an object.');
   // Reject unknown settings and invalid values early, including nested budget settings.
-  for (const key of Object.keys(value)) if (!['appDir', 'importAlias', 'sourcemap', 'compress', 'budgets'].includes(key)) throw new TypeError(`Unknown TinyJS option: ${key}`);
+  for (const key of Object.keys(value)) if (!['rootApiRoutes', 'appDir', 'importAlias', 'sourcemap', 'compress', 'budgets'].includes(key)) throw new TypeError(`Unknown TinyJS option: ${key}`);
+  if (value.rootApiRoutes !== undefined && typeof value.rootApiRoutes !== 'boolean') throw new TypeError('rootApiRoutes must be boolean.');
   if (value.appDir !== undefined && value.appDir !== 'app' && value.appDir !== 'src/app') throw new TypeError('appDir must be app or src/app.');
   if (value.importAlias !== undefined && (typeof value.importAlias !== 'string' || !/^[@~#][a-zA-Z0-9_-]*\/\*$/.test(value.importAlias))) throw new TypeError('importAlias must be a wildcard alias such as @/*.');
   if (value.sourcemap !== undefined && typeof value.sourcemap !== 'boolean' && value.sourcemap !== 'hidden') throw new TypeError('sourcemap must be boolean or hidden.');

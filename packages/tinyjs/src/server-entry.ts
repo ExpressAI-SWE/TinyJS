@@ -13,7 +13,12 @@ const errors = normalizeAppFiles(import.meta.glob<ComponentType<PageProps>>(['/_
 const layouts = normalizeAppFiles(import.meta.glob<Layout>(['/__tinyjs_app__/**/layout.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { eager: true, import: 'default' }));
 const apis = normalizeAppFiles(import.meta.glob<Record<string, unknown>>('/__tinyjs_app__/api/**/route.{ts,js}', { eager: true }));
 
+declare const __TINYJS_ROOT_API_ROUTES__: boolean;
+const mountedApis = __TINYJS_ROOT_API_ROUTES__
+  ? Object.fromEntries(Object.entries(apis).map(([file, api]) => [file.replace('/app/api/', '/app/'), api]))
+  : apis;
+
 // Give the request handler the discovered app files and the current build assets.
 export function createApplication(assets: PageAssets) {
-  return createHandler(pages, layouts, apis, assets, { notFound: notFound['/app/not-found.tsx'], errors, metadata: Object.fromEntries(Object.entries(modules).map(([file, module]) => [file, module.metadata ?? {}])) });
+  return createHandler(pages, layouts, mountedApis, assets, { notFound: notFound['/app/not-found.tsx'], errors, metadata: Object.fromEntries(Object.entries(modules).map(([file, module]) => [file, module.metadata ?? {}])) });
 }
