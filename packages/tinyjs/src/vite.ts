@@ -28,6 +28,7 @@ function config(root: string, settings: TinyConfig): InlineConfig {
   return {
     root,
     configFile: false,
+    define: { __TINYJS_ROOT_API_ROUTES__: JSON.stringify(settings.rootApiRoutes ?? false) },
     appType: 'custom',
     publicDir: false,
     oxc: { jsx },
@@ -69,7 +70,7 @@ function config(root: string, settings: TinyConfig): InlineConfig {
 export async function dev(root: string, host: string, port: number) {
   const settings = await loadConfig(root);
   const appDir = settings.appDir ?? 'app';
-  await diagnoseRoutes(root, appDir);
+  await diagnoseRoutes(root, appDir, settings.rootApiRoutes);
   const options = config(root, settings);
   const vite = await createServer({
     ...options,
@@ -89,7 +90,7 @@ export async function dev(root: string, host: string, port: number) {
           clearTimeout(timer);
           // Vite reloads changed route globs. Sending a second reload can interrupt navigation.
           timer = setTimeout(() => {
-            void diagnoseRoutes(root, appDir).catch(error => server.config.logger.error(String(error)));
+            void diagnoseRoutes(root, appDir, settings.rootApiRoutes).catch(error => server.config.logger.error(String(error)));
           }, 50);
         };
         server.watcher.on('add', changed).on('unlink', changed);
@@ -122,7 +123,7 @@ async function loadConfig(root: string): Promise<TinyConfig> {
 }
 
 // Discover and validate page and API routes before serving or building the app.
-async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appDir']>) {
+async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appDir']>, rootApiRoutes = false) {
   const pages: string[] = [], apis: string[] = [];
   let loading = false, errors = false;
   async function visit(directory: string, relative: string) {
@@ -140,7 +141,7 @@ async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appD
   }
   try { await visit(join(root, appDir), '/app'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`TinyJS needs a ${appDir} directory containing page.tsx or page.jsx.`); throw error; }
-  validateRoutes(pages, '/page.tsx'); validateRoutes(apis, '/route.ts');
+  validateRoutes(pages, '/page.tsx'); validateRoutes(rootApiRoutes ? apis.map(file => file.replace('/app/api/', '/app/')) : apis, '/route.ts');
   console.log(`TinyJS routes: ${pages.length} pages, ${apis.length} API handlers`);
   return { loading, errors };
 }
@@ -152,7 +153,7 @@ export async function build(root: string) {
   await mkdir(output.dir, { recursive: true });
   await rm(output.metadata, { force: true });
   const settings = await loadConfig(root);
-  const routes = await diagnoseRoutes(root, settings.appDir ?? 'app');
+  const routes = await diagnoseRoutes(root, settings.appDir ?? 'app', settings.rootApiRoutes);
   const options = config(root, settings);
   const client = await viteBuild({
     ...options,

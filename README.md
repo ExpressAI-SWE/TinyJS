@@ -84,3 +84,5 @@ Three.js is an optional peer dependency and is not loaded by apps that do not im
 The Web adapter is experimental and has not been verified in a deployed Edge runtime. See deployment requirements and limitations in its guide.
 
 See the [Stage 2 verification report](docs/stage2-status.md) and [recorded performance measurements](docs/performance.md) for actual results and remaining acceptance work.
+
+Set `rootApiRoutes: true` in `tinyjs.config.json` to mount API handlers without the `/api` prefix. Keep handler files in `app/api`.
