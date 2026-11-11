@@ -2,7 +2,7 @@
 import { expect, test } from 'bun:test';
 import { h } from 'preact';
 import { createHandler } from '../packages/tinyjs/src/handler.js';
-import { matchRoute } from '../packages/tinyjs/src/routing.js';
+import { createRouteMatcher, matchRoute } from '../packages/tinyjs/src/routing.js';
 import { defineConfig } from '../packages/tinyjs/src/config.js';
 
 test('dynamic routes have deterministic precedence and decoded catch-all parameters', () => {
@@ -12,6 +12,19 @@ test('dynamic routes have deterministic precedence and decoded catch-all paramet
  expect(matchRoute(files,'/docs/a/caf%C3%A9','/page.tsx')?.params).toEqual({slug:['a','café']});
  expect(matchRoute(files,'/docs','/page.tsx')).toBeUndefined();
  expect(matchRoute(files,'/users/a/b','/page.tsx')).toBeUndefined();
+});
+
+test('prepared route tables retain precedence without leaking params between requests', () => {
+ const files = ['/app/users/[id]/route.ts', '/app/users/new/route.ts', '/app/docs/[...slug]/route.ts'];
+ const match = createRouteMatcher(files, '/route.ts');
+ expect(match('/users/new')!.file).toBe('/app/users/new/route.ts');
+ expect(match('/users/a%2Fb')!.params).toEqual({ id: 'a/b' });
+ expect(match('/docs/a/caf%C3%A9')!.params).toEqual({ slug: ['a', 'café'] });
+ expect(match('/docs')).toBeUndefined();
+ expect(match('/users/a/b')).toBeUndefined();
+ const first = match('/users/42')!;
+ first.params.id = 'changed';
+ expect(match('/users/42')!.params).toEqual({ id: '42' });
 });
 
 test('SSR passes params and repeated query values, metadata, custom errors and 404', async () => {

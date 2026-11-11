@@ -125,7 +125,7 @@ async function loadConfig(root: string): Promise<TinyConfig> {
 // Discover and validate page and API routes before serving or building the app.
 async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appDir']>, rootApiRoutes = false) {
   const pages: string[] = [], apis: string[] = [];
-  let loading = false, errors = false;
+  let loading = false, errors = false, browser = false;
   async function visit(directory: string, relative: string) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = `${relative}/${entry.name}`;
@@ -133,6 +133,7 @@ async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appD
       else if (/^page\.[jt]sx$/.test(entry.name) && !path.startsWith('/app/api/')) pages.push(path.replace(/\.jsx$/, '.tsx'));
       else if (/^route\.[jt]s$/.test(entry.name) && path.startsWith('/app/api/')) apis.push(path.replace(/\.js$/, '.ts'));
       if (!path.startsWith('/app/api/')) {
+        browser ||= /^not-found\.[jt]sx$/.test(entry.name) || entry.isSymbolicLink();
         // Vite follows symlinks; retain support when this scan cannot inspect their targets.
         loading ||= /^loading\.[jt]sx$/.test(entry.name) || entry.isSymbolicLink();
         errors ||= /^error\.[jt]sx$/.test(entry.name) || entry.isSymbolicLink();
@@ -143,7 +144,7 @@ async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appD
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`TinyJS needs a ${appDir} directory containing page.tsx or page.jsx.`); throw error; }
   validateRoutes(pages, '/page.tsx'); validateRoutes(rootApiRoutes ? apis.map(file => file.replace('/app/api/', '/app/')) : apis, '/route.ts');
   console.log(`TinyJS routes: ${pages.length} pages, ${apis.length} API handlers`);
-  return { loading, errors };
+  return { loading, errors, browser: browser || pages.length > 0 };
 }
 
 // Build browser and server bundles, then publish metadata only after both builds succeed.
@@ -155,7 +156,7 @@ export async function build(root: string) {
   const settings = await loadConfig(root);
   const routes = await diagnoseRoutes(root, settings.appDir ?? 'app', settings.rootApiRoutes);
   const options = config(root, settings);
-  const client = await viteBuild({
+  const client = routes.browser ? await viteBuild({
     ...options,
     define: {
       'import.meta.env.TINYJS_LOADING': String(routes.loading),
@@ -171,16 +172,19 @@ export async function build(root: string) {
       sourcemap: settings.sourcemap ?? false,
       rolldownOptions: { input: { client: clientId } },
     },
-  });
-  if (Array.isArray(client) || !('output' in client)) throw new Error('Expected one TinyJS browser build.');
-  const entry = client.output.find((file) => file.type === 'chunk' && file.isEntry);
-  if (!entry || entry.type !== 'chunk') throw new Error('TinyJS browser entry was not emitted.');
+  }) : undefined;
+  if (client && (Array.isArray(client) || !('output' in client))) throw new Error('Expected one TinyJS browser build.');
+  const clientOutput = client?.output ?? [];
+  const entry = clientOutput.find((file) => file.type === 'chunk' && file.isEntry);
+  if (routes.browser && (!entry || entry.type !== 'chunk')) throw new Error('TinyJS browser entry was not emitted.');
+  if (!routes.browser) await rm(output.client, { recursive: true, force: true });
 
   await viteBuild({
     ...options,
     ssr: { noExternal: true },
     build: {
       ssr: true,
+      minify: true,
       outDir: output.server,
       emptyOutDir: true,
       rolldownOptions: { input: serverId, output: { entryFileNames: 'server.mjs' } },
@@ -188,11 +192,11 @@ export async function build(root: string) {
   });
 
   const assets: BuildAssets = {
-    entry: entry.fileName,
-    styles: client.output.filter((file) => file.type === 'asset' && file.fileName.endsWith('.css')).map((file) => file.fileName),
+    entry: entry?.fileName ?? null,
+    styles: clientOutput.filter((file) => file.type === 'asset' && file.fileName.endsWith('.css')).map((file) => file.fileName),
   };
   // Measure generated assets and optionally write gzip copies for the production server.
-  const statistics = client.output.filter((file) => file.type === 'chunk' || /\.(css|svg|json)$/.test(file.fileName)).map((file) => {
+  const statistics = clientOutput.filter((file) => file.type === 'chunk' || /\.(css|svg|json)$/.test(file.fileName)).map((file) => {
     const source = file.type === 'chunk' ? file.code : file.source;
     const raw = Buffer.from(source);
     const gzip = gzipSync(raw, { level: 9 });
@@ -204,10 +208,10 @@ export async function build(root: string) {
   const pending = `${output.metadata}.tmp`;
 
   // Follow shared entry imports to measure the JavaScript needed at startup.
-  const files = new Set([entry.fileName]);
+  const files = new Set(entry ? [entry.fileName] : []);
   let bytes = 0;
   for (const name of files) {
-    const chunk = client.output.find((file) => file.fileName === name);
+    const chunk = clientOutput.find((file) => file.fileName === name);
     if (chunk?.type !== 'chunk') continue;
     bytes += statistics.find((item) => item.file === name)!.gzip;
     for (const dependency of chunk.imports) files.add(dependency);
