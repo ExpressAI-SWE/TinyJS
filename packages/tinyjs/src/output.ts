@@ -4,7 +4,7 @@ import { join } from 'node:path';
 export const assetBase = '/_tinyjs/';
 
 export interface BuildAssets {
-  entry: string;
+  entry: string | null;
   styles: string[];
 }
 

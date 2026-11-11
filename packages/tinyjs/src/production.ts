@@ -30,7 +30,7 @@ export async function start(root: string, host: string, port: number) {
     createApplication: (assets: PageAssets) => Handler;
   };
   const handle = createApplication({
-    scripts: [assetBase + assets.entry],
+    scripts: assets.entry ? [assetBase + assets.entry] : [],
     styles: assets.styles.map((file) => assetBase + file),
   });
 
@@ -76,6 +76,8 @@ export async function start(root: string, host: string, port: number) {
       return new Response('Not Found', { status: 404, headers: plainText });
     }
   }));
+  // Keep connections open across idle clients' next write; never retry a POST.
+  server.keepAliveTimeout = 120_000;
   server.listen(port, host);
   await once(server, 'listening');
   printAddress(server);
