@@ -31,7 +31,11 @@ export function validateRoutes(files: string[], suffix: '/page.tsx' | '/route.ts
 
 /** Static segments outrank parameters, which outrank terminal catch-alls. */
 export function matchRoute(files: string[], path: string, suffix: '/page.tsx' | '/route.ts'): RouteMatch | undefined {
-  const segments = path === '/' ? [] : path.slice(1).split('/');
+  return createRouteMatcher(files, suffix)(path);
+}
+
+// A handler's route table is fixed; prepare its precedence once instead of on every request.
+export function createRouteMatcher(files: string[], suffix: '/page.tsx' | '/route.ts') {
   const candidates = files.map((file) => ({ file, parts: file.slice(5, -suffix.length).split('/').filter(Boolean) }));
   candidates.sort((a, b) => {
     const weight = (s = '') => s.startsWith('[...') ? 1 : s.startsWith('[') ? 2 : s ? 3 : 0;
@@ -41,22 +45,25 @@ export function matchRoute(files: string[], path: string, suffix: '/page.tsx' | 
     }
     return a.file.localeCompare(b.file);
   });
-  // Try routes in priority order and collect decoded dynamic segments for the page or API.
-  for (const { file, parts } of candidates) {
-    const params: RouteMatch['params'] = Object.create(null) as RouteMatch['params'];
-    let index = 0;
-    let valid = true;
-    for (const part of parts) {
-      const catchAll = /^\[\.\.\.(\w+)\]$/.exec(part);
-      const dynamic = /^\[(\w+)\]$/.exec(part);
-      if (catchAll) {
-        if (index >= segments.length || part !== parts.at(-1)) { valid = false; break; }
-        params[catchAll[1]] = segments.slice(index).map(decodeURIComponent);
-        index = segments.length;
-      } else if (dynamic && index < segments.length) {
-        params[dynamic[1]] = decodeURIComponent(segments[index++]);
-      } else if (segments[index++] !== encodeURIComponent(part)) { valid = false; break; }
+  return (path: string): RouteMatch | undefined => {
+    const segments = path === '/' ? [] : path.slice(1).split('/');
+    // Try routes in priority order and collect decoded dynamic segments for the page or API.
+    for (const { file, parts } of candidates) {
+      const params: RouteMatch['params'] = Object.create(null) as RouteMatch['params'];
+      let index = 0;
+      let valid = true;
+      for (const part of parts) {
+        const catchAll = /^\[\.\.\.(\w+)\]$/.exec(part);
+        const dynamic = /^\[(\w+)\]$/.exec(part);
+        if (catchAll) {
+          if (index >= segments.length || part !== parts.at(-1)) { valid = false; break; }
+          params[catchAll[1]] = segments.slice(index).map(decodeURIComponent);
+          index = segments.length;
+        } else if (dynamic && index < segments.length) {
+          params[dynamic[1]] = decodeURIComponent(segments[index++]);
+        } else if (segments[index++] !== encodeURIComponent(part)) { valid = false; break; }
+      }
+      if (valid && index === segments.length) return { file, params };
     }
-    if (valid && index === segments.length) return { file, params };
-  }
+  };
 }

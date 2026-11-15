@@ -4,7 +4,7 @@ import { renderToString } from 'preact-render-to-string';
 import { layoutAncestry, pageTree, queryProps } from './route-tree.js';
 import type { PageProps } from './route-tree.js';
 import type { Layout } from './route-tree.js';
-import { requestPath, matchRoute } from './routing.js';
+import { requestPath, createRouteMatcher } from './routing.js';
 
 export interface PageAssets {
   scripts: string[];
@@ -31,6 +31,8 @@ export function createHandler(
   assets: PageAssets,
   special: { notFound?: ComponentType<PageProps>; errors?: Record<string, ComponentType<PageProps>>; metadata?: Record<string, { title?: string; description?: string }> } = {},
 ): Handler {
+  const matchApi = createRouteMatcher(Object.keys(apis), '/route.ts');
+  const matchPage = createRouteMatcher(Object.keys(pages), '/page.tsx');
 
   async function dispatch(request: Request) {
     let path: string;
@@ -42,7 +44,7 @@ export function createHandler(
     }
 
     // API routes run first and receive the dynamic parameters from the matching URL.
-    const apiMatch = matchRoute(Object.keys(apis), path, '/route.ts');
+    const apiMatch = matchApi(path);
     const api = apiMatch && apis[apiMatch.file];
     if (api) {
       const allowed = apiMethods.filter((method) =>
@@ -57,7 +59,7 @@ export function createHandler(
     }
 
     // Otherwise render a page inside its parent layouts, or use the not-found page.
-    const match = matchRoute(Object.keys(pages), path, '/page.tsx');
+    const match = matchPage(path);
     const file = match?.file ?? '/app/not-found.tsx';
     const Page = match ? pages[file] : special.notFound;
     if (!Page) return textResponse('Not Found', 404);
