@@ -14,12 +14,14 @@ test('production build can mount file-based APIs at the root', async () => {
     const stale = join(root, '.tinyjs/client/assets/old.js');
     await mkdir(join(root, '.tinyjs/client/assets'), { recursive: true });
     await writeFile(stale, 'old browser build');
-    await build(root);
+    await build(root, true);
     await expect(readFile(stale)).rejects.toThrow();
     expect(JSON.parse(await readFile(join(root, '.tinyjs/build.json'), 'utf8'))).toEqual({ entry: null, styles: [] });
     const stats = JSON.parse(await readFile(join(root, '.tinyjs/stats.json'), 'utf8'));
     expect(stats.sharedGzip).toBe(0);
     expect(stats.assets).toEqual([]);
+    const analysis = JSON.parse(await readFile(join(root, '.tinyjs/devtools-build.json'), 'utf8'));
+    expect(analysis.assets).toEqual([]);
     const { createApplication } = await import(join(root, '.tinyjs/server/server.mjs'));
     const handle = createApplication({ scripts: [] });
     expect(await (await handle(new Request('http://localhost/posts/42'))).json()).toEqual({ id: '42' });

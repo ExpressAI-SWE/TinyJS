@@ -70,6 +70,7 @@ Three.js is an optional peer dependency and is not loaded by apps that do not im
 ## Guides
 
 - [Getting started](docs/getting-started.md)
+- [Development tools](docs/devtools.md)
 - [Configuration](docs/configuration.md)
 - [Routing](docs/routing.md)
 - [SSR and hydration](docs/ssr.md)

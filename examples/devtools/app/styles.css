@@ -1,0 +1,27 @@
+body {
+  margin: 0;
+  background: #f5f5ef;
+  color: #1f231c;
+  font: 1rem/1.55 system-ui, sans-serif;
+}
+header {
+  border-bottom: 1px solid #d5d8cc;
+}
+nav, main {
+  max-width: 48rem;
+  padding: 1.25rem;
+  margin: 0 auto;
+}
+nav, .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+a {
+  color: #235634;
+}
+button {
+  font: inherit;
+  padding: .35rem .65rem;
+  cursor: pointer;
+}

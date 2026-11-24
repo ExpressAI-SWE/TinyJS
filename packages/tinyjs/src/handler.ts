@@ -5,10 +5,14 @@ import { layoutAncestry, pageTree, queryProps } from './route-tree.js';
 import type { PageProps } from './route-tree.js';
 import type { Layout } from './route-tree.js';
 import { requestPath, createRouteMatcher } from './routing.js';
+import type { RequestTelemetry } from './devtools/request.js';
+
+declare const TINYJS_DEVTOOLS: boolean;
 
 export interface PageAssets {
   scripts: string[];
   styles?: string[];
+  reportRoutes?: (pages: string[], apis: string[], layouts: string[]) => void;
 }
 
 export type Handler = (request: Request) => Response | Promise<Response>;
@@ -35,6 +39,10 @@ export function createHandler(
   const matchPage = createRouteMatcher(Object.keys(pages), '/page.tsx');
 
   async function dispatch(request: Request) {
+    const telemetry = typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS
+      ? (request as Request & { tinyjsDevTelemetry?: RequestTelemetry }).tinyjsDevTelemetry
+      : undefined;
+    const matchedAt = typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS && telemetry?.profiling ? performance.now() : undefined;
     let path: string;
     try {
       path = requestPath(new URL(request.url).pathname);
@@ -47,6 +55,9 @@ export function createHandler(
     const apiMatch = matchApi(path);
     const api = apiMatch && apis[apiMatch.file];
     if (api) {
+      if (typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS && telemetry && apiMatch) {
+        telemetry.match(apiMatch.file, apiMatch.params, 'api', matchedAt);
+      }
       const allowed = apiMethods.filter((method) =>
         typeof api[method] === 'function' || (method === 'HEAD' && typeof api.GET === 'function'),
       );
@@ -61,6 +72,9 @@ export function createHandler(
     // Otherwise render a page inside its parent layouts, or use the not-found page.
     const match = matchPage(path);
     const file = match?.file ?? '/app/not-found.tsx';
+    if (typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS && telemetry) {
+      telemetry.match(file, match?.params ?? {}, 'ssr', matchedAt);
+    }
     const Page = match ? pages[file] : special.notFound;
     if (!Page) return textResponse('Not Found', 404);
     if (request.method !== 'GET' && request.method !== 'HEAD') return methodNotAllowed(['GET', 'HEAD']);
@@ -71,8 +85,10 @@ export function createHandler(
     let status = match ? 200 : 404;
     let rendered: string;
     let errorFile: string | undefined;
+    const renderAt = typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS && telemetry?.profiling ? performance.now() : undefined;
     // If rendering fails, try the nearest error page first and then its ancestors.
     try { rendered = renderToString(h(Fragment, null, tree)); } catch (error) {
+      if (typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS) telemetry?.error(error, 'ssr');
       let recovered = false;
       for (const candidate of layoutAncestry(file).map((key) => key.replace('layout.tsx', 'error.tsx')).reverse()) {
         if (!special.errors?.[candidate]) continue;
@@ -87,6 +103,7 @@ export function createHandler(
       if (!recovered) throw error;
       status = 500;
     }
+    if (typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS && renderAt !== undefined) telemetry?.timing('SSR render', renderAt);
     // Send the rendered page and props together so browser-entry.ts can hydrate the same tree.
     const metadata = special.metadata?.[file];
     const document = h('html', { lang: 'en' },

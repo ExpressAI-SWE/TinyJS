@@ -2,6 +2,8 @@ import { parseArgs } from 'node:util';
 
 const help = `Usage: tinyjs <dev | build | serve | test>
   dev, serve   [--host <host>] [--port <port>]
+  dev          [--no-devtools]
+  build        [--analyze]
   test         [--unit] [--e2e] [--lint] [--types] [--format] [--watch | --fix]`;
 
 const checks = ['unit', 'e2e', 'lint', 'types', 'format'] as const;
@@ -15,6 +17,7 @@ async function main() {
       unit: { type: 'boolean' }, e2e: { type: 'boolean' }, lint: { type: 'boolean' },
       types: { type: 'boolean' }, format: { type: 'boolean' }, watch: { type: 'boolean' },
       fix: { type: 'boolean' },
+      'no-devtools': { type: 'boolean' }, analyze: { type: 'boolean' },
     },
   });
   if (values.help) {
@@ -23,6 +26,8 @@ async function main() {
   }
   const [command] = positionals;
   if (positionals.length !== 1 || !['dev', 'build', 'serve', 'test'].includes(command)) throw new Error(help);
+  if (values['no-devtools'] && command !== 'dev') throw new Error('--no-devtools applies to dev.');
+  if (values.analyze && command !== 'build') throw new Error('--analyze applies to build.');
 
   const root = process.cwd();
   const selected = checks.filter((check) => values[check]);
@@ -37,7 +42,7 @@ async function main() {
   if (command === 'build') {
     if (values.host !== undefined || values.port !== undefined) throw new Error('Host and port apply to dev and serve.');
     const { build } = await import('./vite.js');
-    await build(root);
+    await build(root, values.analyze);
     return;
   }
 
@@ -47,7 +52,7 @@ async function main() {
   if (!host || !/^\d+$/.test(port) || Number(port) > 65535) throw new Error('Specify a host and a port between 0 and 65535.');
   if (command === 'dev') {
     const { dev } = await import('./vite.js');
-    await dev(root, host, Number(port));
+    await dev(root, host, Number(port), !values['no-devtools']);
   } else {
     const { start } = await import('./production.js');
     await start(root, host, Number(port));

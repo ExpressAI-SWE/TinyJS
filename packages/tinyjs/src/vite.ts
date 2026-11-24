@@ -1,17 +1,20 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { defineConfig } from './config.js';
 import type { TinyConfig } from './config.js';
-import { validateRoutes } from './routing.js';
+import { routePath, validateRoutes } from './routing.js';
+import { layoutAncestry } from './route-tree.js';
 import { isBuiltin } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { build as viteBuild, createServer, isRunnableDevEnvironment, normalizePath } from 'vite';
 import type { InlineConfig } from 'vite';
+import type { Plugin } from 'vite';
 import type { Handler, PageAssets } from './handler.js';
 import { httpListener, printAddress } from './http.js';
 import { assetBase, outputPaths } from './output.js';
 import type { BuildAssets } from './output.js';
+import type { DevRoute } from './devtools/protocol.js';
 
 // Explicit extensions keep Vite's reload URLs identical to the resolved entry IDs.
 const clientId = '/@tinyjs/client.js';
@@ -28,7 +31,7 @@ function config(root: string, settings: TinyConfig): InlineConfig {
   return {
     root,
     configFile: false,
-    define: { __TINYJS_ROOT_API_ROUTES__: JSON.stringify(settings.rootApiRoutes ?? false) },
+    define: { __TINYJS_ROOT_API_ROUTES__: JSON.stringify(settings.rootApiRoutes ?? false), TINYJS_DEVTOOLS: 'false' },
     appType: 'custom',
     publicDir: false,
     oxc: { jsx },
@@ -67,13 +70,24 @@ function config(root: string, settings: TinyConfig): InlineConfig {
 }
 
 // Start the development server and recheck routes when app files are added or removed.
-export async function dev(root: string, host: string, port: number) {
+export async function dev(root: string, host: string, port: number, enableDevTools = true) {
   const settings = await loadConfig(root);
   const appDir = settings.appDir ?? 'app';
-  await diagnoseRoutes(root, appDir, settings.rootApiRoutes);
+  const useDevTools = enableDevTools && settings.devtools?.enabled !== false
+    && ['localhost', '127.0.0.1', '::1'].includes(host);
+  let discovered = await diagnoseRoutes(root, appDir, settings.rootApiRoutes, useDevTools);
+  const instrumentation = useDevTools
+    ? await Promise.all([import('./devtools/plugin.js'), import('./devtools/request.js')])
+    : undefined;
+  const devtools = instrumentation?.[0].createDevTools(root, settings, discovered.registry);
   const options = config(root, settings);
   const vite = await createServer({
     ...options,
+    define: { ...options.define, TINYJS_DEVTOOLS: String(Boolean(devtools)) },
+    optimizeDeps: devtools ? {
+      ...options.optimizeDeps,
+      include: ['preact', 'preact/hooks', 'preact/jsx-runtime'],
+    } : options.optimizeDeps,
     server: {
       host, port, strictPort: true,
       fs: { deny: [
@@ -81,28 +95,54 @@ export async function dev(root: string, host: string, port: number) {
         '**/.tinyjs/**', '**/app/api/**',
       ] },
     },
-    plugins: [...(options.plugins ?? []), {
+    plugins: [...(options.plugins ?? []), devtools?.plugin, {
       name: 'tinyjs-dev',
       configureServer(server) {
         let timer: ReturnType<typeof setTimeout> | undefined;
+        let reportedApplication: ((assets: PageAssets) => Handler) | undefined;
         const changed = (file: string) => {
           if (!normalizePath(file).startsWith(`${normalizePath(root)}/${appDir}/`)) return;
           clearTimeout(timer);
           // Vite reloads changed route globs. Sending a second reload can interrupt navigation.
           timer = setTimeout(() => {
-            void diagnoseRoutes(root, appDir, settings.rootApiRoutes).catch(error => server.config.logger.error(String(error)));
+            void diagnoseRoutes(root, appDir, settings.rootApiRoutes, useDevTools).then(next => {
+              discovered = next;
+              reportedApplication = undefined;
+              devtools?.collector.setRoutes(next.registry);
+            }, (error: unknown) => {
+              server.config.logger.error(String(error));
+              devtools?.collector.record('error', { type: 'Routing', message: String(error), stack: error instanceof Error ? error.stack : undefined });
+            });
           }, 50);
         };
         server.watcher.on('add', changed).on('unlink', changed);
         server.httpServer?.once('close', () => { clearTimeout(timer); server.watcher.off('add', changed).off('unlink', changed); });
         const ssr = server.environments.ssr;
         if (!isRunnableDevEnvironment(ssr)) throw new Error('TinyJS needs Vite’s runnable SSR environment.');
-        return () => server.middlewares.use(httpListener(async (request) => {
-          const { createApplication } = await ssr.runner.import(serverId) as {
+        const runner = ssr.runner;
+        async function dispatch(request: Request, inject = false, loaded?: () => void) {
+          const { createApplication } = await runner.import(serverId) as {
             createApplication: (assets: PageAssets) => Handler;
           };
-          return createApplication({ scripts: ['/@vite/client', clientId] })(request);
-        }));
+          loaded?.();
+          const scripts = ['/@vite/client', clientId];
+          if (inject && devtools) scripts.push(devtools.script);
+          const assets: PageAssets = { scripts };
+          if (inject && devtools && reportedApplication !== createApplication) {
+            reportedApplication = createApplication;
+            assets.reportRoutes = (pages, apis, layouts) => {
+              devtools.collector.setRoutes(routeRegistry(pages, apis, layouts, discovered.sources, appDir, settings.rootApiRoutes));
+            };
+          }
+          return createApplication(assets)(request);
+        }
+        const listener = devtools && instrumentation
+          ? instrumentation[1].instrumentRequests(server, devtools, dispatch, (file, mode) => {
+            const key = mode === 'api' && settings.rootApiRoutes ? file.replace('/app/', '/app/api/') : file;
+            return discovered.sources.get(key) ?? `/${appDir}${key.slice(4)}`;
+          })
+          : httpListener(dispatch);
+        return () => server.middlewares.use(listener);
       },
     }],
   });
@@ -113,7 +153,12 @@ export async function dev(root: string, host: string, port: number) {
     throw error;
   }
   if (vite.httpServer) printAddress(vite.httpServer);
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void vite.close(); });
+  const close = () => { void vite.close(); };
+  const signals = ['SIGINT', 'SIGTERM'] as const;
+  for (const signal of signals) process.once(signal, close);
+  vite.httpServer?.once('close', () => {
+    for (const signal of signals) process.off(signal, close);
+  });
 }
 
 // Missing configuration uses defaults; malformed configuration remains an error.
@@ -123,8 +168,9 @@ async function loadConfig(root: string): Promise<TinyConfig> {
 }
 
 // Discover and validate page and API routes before serving or building the app.
-async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appDir']>, rootApiRoutes = false) {
+async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appDir']>, rootApiRoutes = false, inspect = false) {
   const pages: string[] = [], apis: string[] = [];
+  const sources = new Map<string, string>();
   let loading = false, errors = false, browser = false;
   async function visit(directory: string, relative: string) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -132,6 +178,9 @@ async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appD
       if (entry.isDirectory()) await visit(join(directory, entry.name), path);
       else if (/^page\.[jt]sx$/.test(entry.name) && !path.startsWith('/app/api/')) pages.push(path.replace(/\.jsx$/, '.tsx'));
       else if (/^route\.[jt]s$/.test(entry.name) && path.startsWith('/app/api/')) apis.push(path.replace(/\.js$/, '.ts'));
+      if (inspect && /^(page|layout)\.[jt]sx$|^route\.[jt]s$/.test(entry.name)) {
+        sources.set(path.replace(/\.jsx$/, '.tsx').replace(/\.js$/, '.ts'), `/${appDir}${path.slice(4)}`);
+      }
       if (!path.startsWith('/app/api/')) {
         browser ||= /^not-found\.[jt]sx$/.test(entry.name) || entry.isSymbolicLink();
         // Vite follows symlinks; retain support when this scan cannot inspect their targets.
@@ -144,11 +193,52 @@ async function diagnoseRoutes(root: string, appDir: NonNullable<TinyConfig['appD
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`TinyJS needs a ${appDir} directory containing page.tsx or page.jsx.`); throw error; }
   validateRoutes(pages, '/page.tsx'); validateRoutes(rootApiRoutes ? apis.map(file => file.replace('/app/api/', '/app/')) : apis, '/route.ts');
   console.log(`TinyJS routes: ${pages.length} pages, ${apis.length} API handlers`);
-  return { loading, errors, browser: browser || pages.length > 0 };
+  const registry = inspect ? routeRegistry(pages, apis, [...sources.keys()], sources, appDir, rootApiRoutes) : [];
+  return { loading, errors, browser: browser || pages.length > 0, sources, registry };
+}
+
+function routeRegistry(pages: string[], apis: string[], layouts: string[], sources: Map<string, string>, appDir: string, rootApiRoutes = false): DevRoute[] {
+  const registeredLayouts = new Set(layouts);
+  const source = (file: string) => sources.get(file) ?? `/${appDir}${file.slice(4)}`;
+  return [
+    ...pages.map(file => ({
+      pattern: routePath(file, '/page.tsx').replace(/%5B/g, '[').replace(/%5D/g, ']'),
+      file: source(file), kind: 'page' as const,
+      layouts: layoutAncestry(file).filter(layout => registeredLayouts.has(layout)).map(source),
+    })),
+    ...apis.map(file => ({
+      pattern: routePath(rootApiRoutes ? file.replace('/app/api/', '/app/') : file, '/route.ts').replace(/%5B/g, '[').replace(/%5D/g, ']'),
+      file: source(file), kind: 'api' as const, layouts: [],
+    })),
+  ];
+}
+
+function productionSourceMaps(directory: string): Plugin {
+  function removeRuntimeSource(map: { sources: string[]; sourcesContent?: (string | null)[] }, file: string) {
+    if (!map.sourcesContent) return false;
+    const index = map.sources.findIndex(source => normalizePath(resolve(directory, dirname(file), source)) === clientEntry);
+    if (index < 0) return false;
+    // Keep location mappings without embedding the original dev-only branches.
+    map.sourcesContent[index] = null;
+    return true;
+  }
+  return {
+    name: 'tinyjs-production-sourcemaps',
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type === 'chunk' && file.map) removeRuntimeSource(file.map, file.fileName);
+        if (file.type === 'asset' && file.fileName.endsWith('.js.map')) {
+          const source = Buffer.from(file.source).toString();
+          const map: Parameters<typeof removeRuntimeSource>[0] = JSON.parse(source);
+          if (removeRuntimeSource(map, file.fileName)) file.source = JSON.stringify(map);
+        }
+      }
+    },
+  };
 }
 
 // Build browser and server bundles, then publish metadata only after both builds succeed.
-export async function build(root: string) {
+export async function build(root: string, analyze = false) {
   const started = performance.now();
   const output = outputPaths(root);
   await mkdir(output.dir, { recursive: true });
@@ -158,7 +248,9 @@ export async function build(root: string) {
   const options = config(root, settings);
   const client = routes.browser ? await viteBuild({
     ...options,
+    plugins: [...(options.plugins ?? []), settings.sourcemap && productionSourceMaps(output.client)],
     define: {
+      ...options.define,
       'import.meta.env.TINYJS_LOADING': String(routes.loading),
       'import.meta.env.TINYJS_ERRORS': String(routes.errors),
     },
@@ -218,9 +310,24 @@ export async function build(root: string) {
   }
   console.log(`Shared client JS: ${bytes} bytes gzip (goal: 3000 bytes)`);
   const exceeded = statistics.filter((item) => item.file.endsWith('.js') && item.gzip > (settings.budgets?.chunkGzip ?? 150_000));
-  if (bytes > (settings.budgets?.sharedGzip ?? 3000)) console.warn(`Shared client exceeds ${settings.budgets?.sharedGzip ?? 3000} byte gzip budget.`);
-  for (const item of exceeded) console.warn(`Large chunk: ${item.file} (${item.gzip} bytes gzip)`);
-  await writeFile(join(output.dir, 'stats.json'), JSON.stringify({ durationMs: Math.round(performance.now() - started), sharedGzip: bytes, assets: statistics.map(({ compressed, ...item }) => item) }, null, 2));
+  const warnings = exceeded.map(item => `Large chunk: ${item.file} (${item.gzip} bytes gzip)`);
+  if (bytes > (settings.budgets?.sharedGzip ?? 3000)) warnings.unshift(`Shared client exceeds ${settings.budgets?.sharedGzip ?? 3000} byte gzip budget.`);
+  for (const warning of warnings) console.warn(warning);
+  await writeFile(join(output.dir, 'stats.json'), JSON.stringify({ durationMs: Math.round(performance.now() - started), sharedGzip: bytes, warnings, assets: statistics.map(({ compressed, ...item }) => item) }, null, 2));
+  if (analyze) {
+    const { buildAnalysis } = await import('./devtools/build.js');
+    const measured = new Map(statistics.map(({ file, raw, gzip }) => [file, { file, raw, gzip }]));
+    for (const asset of clientOutput) {
+      if (asset.type !== 'asset' || measured.has(asset.fileName)) continue;
+      const contents = Buffer.from(asset.source);
+      measured.set(asset.fileName, { file: asset.fileName, raw: contents.byteLength, gzip: gzipSync(contents, { level: 9 }).byteLength });
+    }
+    const chunks = clientOutput.flatMap(file => file.type === 'chunk' ? [file] : []);
+    const report = buildAnalysis(root, chunks, [...measured.values()], warnings);
+    await writeFile(join(output.dir, 'devtools-build.json'), JSON.stringify(report, null, 2));
+  } else {
+    await rm(join(output.dir, 'devtools-build.json'), { force: true });
+  }
   if (settings.budgets?.fail && (exceeded.length || bytes > (settings.budgets.sharedGzip ?? 3000))) throw new Error('TinyJS performance budget exceeded. See .tinyjs/stats.json.');
   await writeFile(pending, JSON.stringify(assets));
   await rename(pending, output.metadata);

@@ -5,6 +5,8 @@ import type { PageAssets } from './handler.js';
 import type { Layout } from './route-tree.js';
 import type { PageProps } from './route-tree.js';
 
+declare const TINYJS_DEVTOOLS: boolean;
+
 // Vite finds app files at build time so the shared handler can resolve pages, layouts and APIs.
 const modules = normalizeAppFiles(import.meta.glob<{ default: ComponentType<PageProps>; metadata?: { title?: string; description?: string } }>(['/__tinyjs_app__/**/page.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { eager: true }));
 const pages = Object.fromEntries(Object.entries(modules).map(([file, module]) => [file, module.default]));
@@ -20,5 +22,8 @@ const mountedApis = __TINYJS_ROOT_API_ROUTES__
 
 // Give the request handler the discovered app files and the current build assets.
 export function createApplication(assets: PageAssets) {
+  if (typeof TINYJS_DEVTOOLS !== 'undefined' && TINYJS_DEVTOOLS && assets.reportRoutes) {
+    assets.reportRoutes(Object.keys(pages), Object.keys(apis), Object.keys(layouts));
+  }
   return createHandler(pages, layouts, mountedApis, assets, { notFound: notFound['/app/not-found.tsx'], errors, metadata: Object.fromEntries(Object.entries(modules).map(([file, module]) => [file, module.metadata ?? {}])) });
 }

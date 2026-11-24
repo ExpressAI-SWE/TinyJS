@@ -32,6 +32,13 @@
         "@mdx-js/mdx": "^3.1.1",
       },
     },
+    "examples/devtools": {
+      "name": "tinyjs-example-devtools",
+      "dependencies": {
+        "preact": "^10.28.0",
+        "tinyjs": "workspace:*",
+      },
+    },
     "examples/dynamic-routing": {
       "name": "tinyjs-example-dynamic-routing",
       "dependencies": {
@@ -465,6 +472,8 @@
     "tinyjs-example": ["tinyjs-example@workspace:examples/basic"],
 
     "tinyjs-example-ai-chatbot": ["tinyjs-example-ai-chatbot@workspace:examples/ai-chatbot"],
+
+    "tinyjs-example-devtools": ["tinyjs-example-devtools@workspace:examples/devtools"],
 
     "tinyjs-example-dynamic-routing": ["tinyjs-example-dynamic-routing@workspace:examples/dynamic-routing"],
 

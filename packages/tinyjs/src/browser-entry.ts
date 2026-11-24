@@ -6,6 +6,8 @@ import type { Layout, PageProps } from './route-tree.js';
 import { matchRoute, requestPath } from './routing.js';
 import { prefersReducedData } from './loading.js';
 
+declare const TINYJS_DEVTOOLS: boolean;
+
 // Vite discovers the browser-loadable app files; the server provides the initial page and props.
 const pages = normalizeAppFiles(import.meta.glob<ComponentType<PageProps>>(['/__tinyjs_app__/**/page.{tsx,jsx}', '/__tinyjs_app__/**/error.{tsx,jsx}', '/__tinyjs_app__/not-found.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { import: 'default' }));
 const layouts = normalizeAppFiles(import.meta.glob<Layout>(['/__tinyjs_app__/**/layout.{tsx,jsx}', '!/__tinyjs_app__/api/**'], { import: 'default' }));
@@ -13,6 +15,19 @@ const loading = normalizeAppFiles(import.meta.glob<ComponentType<PageProps>>(['/
 const root = document.getElementById('tinyjs-root');
 let generation = 0;
 let pending: AbortController | undefined;
+const pendingReports: CustomEvent[] = [];
+
+function report(kind: 'navigation' | 'timing' | 'error' | 'component', data: Record<string, unknown>) {
+  const event = new CustomEvent('tinyjs:devtools', { detail: { kind, data } });
+  if (document.querySelector('[data-tinyjs-devtools]')) window.dispatchEvent(event);
+  else if (document.querySelector('script[src="/@tinyjs/devtools.js"]')) {
+    if (!pendingReports.length) window.addEventListener('tinyjs:devtools-ready', () => {
+      for (const report of pendingReports.splice(0)) window.dispatchEvent(report);
+    }, { once: true });
+    if (pendingReports.length >= 20) pendingReports.shift();
+    pendingReports.push(event);
+  }
+}
 
 // Each route error boundary displays its matching fallback if a child fails in the browser.
 class RouteBoundary extends Component<{ children: ComponentChild; fallback: ComponentChild }, { failed: boolean }> {
@@ -20,6 +35,14 @@ class RouteBoundary extends Component<{ children: ComponentChild; fallback: Comp
   static getDerivedStateFromError() { return { failed: true }; }
   render() { return this.state.failed ? this.props.fallback : this.props.children; }
 }
+
+if (TINYJS_DEVTOOLS) RouteBoundary.prototype.componentDidCatch = (error: unknown) => {
+  report('error', {
+    type: 'Client render', path: location.pathname, file: root?.dataset.page,
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+};
 
 // Rebuild the server-rendered page and layout tree, including its nested error fallbacks.
 async function tree(element: HTMLElement) {
@@ -35,11 +58,20 @@ async function tree(element: HTMLElement) {
   return content;
 }
 
-if (root?.dataset.page) hydrate(await tree(root), root);
+if (TINYJS_DEVTOOLS) {
+  if (root?.dataset.page) {
+    const content = await tree(root);
+    const started = performance.now();
+    hydrate(content, root);
+    report('timing', { type: 'Hydration', path: location.pathname, durationMs: performance.now() - started });
+    report('component', { type: 'Hydration', file: root.dataset.page, durationMs: performance.now() - started });
+  }
+} else if (root?.dataset.page) hydrate(await tree(root), root);
 
 // Fetch the next server-rendered page and update the existing document without a full reload.
 async function navigate(url: URL, push: boolean) {
   if (!root) return;
+  const started = TINYJS_DEVTOOLS ? performance.now() : 0;
   const id = ++generation;
   pending?.abort();
   pending = new AbortController();
@@ -73,13 +105,20 @@ async function navigate(url: URL, push: boolean) {
     if (push) history.pushState(null, '', response.url + url.hash);
     root.dataset.page = next.dataset.page;
     root.dataset.props = next.dataset.props;
+    const renderAt = TINYJS_DEVTOOLS ? performance.now() : 0;
     render(content, root);
+    if (TINYJS_DEVTOOLS) {
+      report('component', { type: 'Navigation render', file: next.dataset.page, durationMs: performance.now() - renderAt });
+    }
     window.document.title = document.title;
     window.document.querySelector('meta[name="description"]')?.remove();
     const description = document.querySelector('meta[name="description"]');
     if (description) window.document.head.append(description.cloneNode(true));
     if (url.hash) window.document.getElementById(decodeURIComponent(url.hash.slice(1)))?.scrollIntoView();
     else window.scrollTo(0, 0);
+    if (TINYJS_DEVTOOLS) {
+      report('navigation', { path: url.pathname, file: next.dataset.page, status: response.status, durationMs: performance.now() - started });
+    }
   } catch {
     if (id === generation) location.assign(url);
   }

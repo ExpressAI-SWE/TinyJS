@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "compile": "tsc -p packages/tinyjs && tsc -p packages/create-tinyjs-fullstack",
-    "typecheck": "tsc -p examples/basic && tsc -p examples/ai-chatbot && tsc -p examples/infinite-terrain && tsc -p examples/three-scene && tsc -p examples/dynamic-routing && tsc -p examples/lazy-loading",
+    "typecheck": "tsc -p examples/basic && tsc -p examples/ai-chatbot && tsc -p examples/infinite-terrain && tsc -p examples/three-scene && tsc -p examples/dynamic-routing && tsc -p examples/lazy-loading && tsc -p examples/devtools",
     "browser:install": "playwright-core install chromium",
     "test": "bun run compile && bun run typecheck && bun packages/tinyjs/bin/tinyjs.js test",
     "dev": "bun run --cwd examples/basic dev",
